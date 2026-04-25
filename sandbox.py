@@ -1,5 +1,5 @@
 """
-Living Wand — Spell Sandbox
+Living Wand — Spell Sandbox (v2: SpellFormer)
 
 Minimal text REPL for exploring the magic system.
 No tutorials, no hints. Just you and the wand.
@@ -8,12 +8,15 @@ Commands:
   add <symbol>          — place a symbol in the circle
   link <a> <b> [type]   — connect two symbols (type: direct/mutual/seq/cond/neg/iter/limit)
   circle open|closed    — toggle circle state
-  cast                  — cast the spell
+  cast                  — cast the spell (SpellFormer + algebra comparison)
   clear                 — clear the circle
   wand                  — show wand state
   symbols               — list known symbols
   history               — show casting history
   sleep                 — train wand on recent casts (the wand "dreams")
+  crystal               — list crystallized spells
+  tags                  — show semantic tags of last cast
+  show                  — show current circle
   quit
 """
 
@@ -28,8 +31,13 @@ from wand.algebra import (
     SpellGraph, evaluate_spell,
     SignalKind, Element, EdgeType,
 )
-from wand.model import create_wand, WandTrainer, affinity_multiplier
 from wand.events import Event, EventType, Pole, NUM_POLES, Emotion
+from wand.transformer import SpellFormer
+from wand.tokenizer import SpellTokenizer
+from wand.wand_adapter import WandAdapter, AffinityHexagon, WandAdapterTrainer
+from wand.crystal import CrystalRegistry
+from wand.effect import interpret_effect
+from wand.grimoire import Grimoire
 
 # Symbol catalog — what the player can discover
 SYMBOLS = {
@@ -89,7 +97,7 @@ EDGE_TYPES = {
 }
 
 POLE_NAMES = [p.name.lower() for p in Pole]
-POLE_BAR = "▰▱"
+POLE_BAR = "\u25b0\u25b1"
 
 
 def pole_bar(value: float, width: int = 10) -> str:
@@ -97,88 +105,55 @@ def pole_bar(value: float, width: int = 10) -> str:
     return POLE_BAR[0] * filled + POLE_BAR[1] * (width - filled)
 
 
-def format_effect(effect, wand_mod: dict | None = None) -> str:
-    """Format a SpellEffect for display."""
-    lines = []
-
-    if effect.synergies:
-        for s in effect.synergies:
-            lines.append(f"  ✦ {s}")
-    if effect.cancellations:
-        for c in effect.cancellations:
-            lines.append(f"  ✗ {c}")
-
-    # Force
-    if effect.force_power:
-        for elem, power in sorted(effect.force_power.items(), key=lambda x: -x[1]):
-            bar = pole_bar(min(power / 3.0, 1.0), 15)
-            lines.append(f"  {elem.name:<6s} {bar} {power:.2f}")
-
-    # Domain
-    if effect.domain_power:
-        for domain, power in sorted(effect.domain_power.items(), key=lambda x: -x[1]):
-            bar = pole_bar(min(power / 3.0, 1.0), 15)
-            lines.append(f"  {domain:<6s} {bar} {power:.2f}")
-
-    lines.append(f"  power={effect.total_power:.2f}  stability={effect.stability:.2f}  "
-                 f"area={effect.area:.2f}  duration={effect.duration:.2f}")
-
-    if effect.tags:
-        lines.append(f"  [{', '.join(sorted(effect.tags))}]")
-
-    if effect.warnings:
-        for w in effect.warnings:
-            lines.append(f"  ⚠ {w}")
-
-    if wand_mod:
-        lines.append(f"  wand: ×{wand_mod['multiplier']:.2f} → final={wand_mod['final_power']:.2f}")
-
-    return "\n".join(lines)
-
-
-def effect_to_events(effect, success: float) -> list[Event]:
-    """Convert a cast result to training events for the wand."""
-    events = []
-
-    # The act of casting itself
-    pole_aff = [0.0] * NUM_POLES
-    for elem, power in effect.force_power.items():
-        pole_aff[Pole.ELEMENT] += abs(power)
-    domain_map = {"body": Pole.BIOLOGY, "life": Pole.BIOLOGY,
-                  "mind": Pole.MENTAL, "matter": Pole.TRANSFORM,
-                  "space": Pole.SPACE, "time": Pole.TIME}
-    for domain, power in effect.domain_power.items():
-        p = domain_map.get(domain, Pole.ELEMENT)
-        pole_aff[p] += abs(power)
-
-    # Normalize
-    total = sum(pole_aff)
-    if total > 0:
-        pole_aff = [v / total for v in pole_aff]
-
-    weight = 0.1 + 0.3 * min(effect.total_power, 3.0) / 3.0
-    valence = success * 0.5 + 0.2  # success feels good
-
-    events.append(Event(
-        event_type=EventType.ACTION,
-        pole_affinity=pole_aff,
-        emotion=Emotion(valence=valence, intensity=weight, arousal=0.4),
-        weight=weight,
-    ))
-
-    return events
-
-
 class Sandbox:
     def __init__(self):
-        self.wand = create_wand(seed=42)
-        self.trainer = WandTrainer(self.wand, lr=5e-4)
+        # SpellFormer (shared magic knowledge)
+        self.spell_former = SpellFormer()
+        model_path = os.path.join(os.path.dirname(__file__), "data", "spellformer.pt")
+        if os.path.exists(model_path):
+            self.spell_former.load_state_dict(torch.load(model_path, weights_only=True))
+            print("SpellFormer loaded")
+        else:
+            print("SpellFormer: no trained model found, using random init")
+        self.spell_former.eval()
+
+        # Wand (personal)
+        self.adapter = WandAdapter()
+        self.hexagon = AffinityHexagon()
+        self.trainer = WandAdapterTrainer(self.adapter, self.hexagon)
+
+        # Crystallization
+        self.crystal = CrystalRegistry(threshold=500)
+        from pathlib import Path
+        crystal_dir = Path(os.path.dirname(__file__)) / "data" / "crystals"
+        self.crystal.save_dir = crystal_dir
+        self.crystal.load()
+
+        # Tokenizer
+        self.tokenizer = SpellTokenizer()
+
+        # Grimoire
+        self.grimoire = Grimoire(os.path.join(os.path.dirname(__file__), "data", "grimoire.db"))
+
+        # Load saved state
+        save_dir = os.path.join(os.path.dirname(__file__), "data", "save")
+        adapter_path = os.path.join(save_dir, "adapter.pt")
+        if os.path.exists(adapter_path):
+            self.adapter.load_state_dict(torch.load(adapter_path, weights_only=True))
+            print("Wand adapter loaded.")
+        self.hexagon.load(os.path.join(save_dir, "hexagon.json"))
+        self.crystal.save_dir = Path(save_dir) / "crystals"
+        self.crystal.load()
+
+        # State
         self.graph = SpellGraph()
-        self.node_names: list[str] = []  # ordered list of placed symbols
+        self.node_names: list[str] = []
         self.history: list[dict] = []
         self.pending_events: list[Event] = []
-        self.cast_count = 0
+        self.cast_count = self.grimoire.total_casts()
         self.sleep_count = 0
+        self.last_effect_desc = None
+        self._save_dir = save_dir
 
     def cmd_add(self, name: str):
         if name not in SYMBOLS:
@@ -194,7 +169,6 @@ class Sandbox:
             print("  usage: link <a> <b> [type]")
             return
 
-        # Parse a, b as indices or names
         a, b = parts[0], parts[1]
         edge_type = EdgeType.DIRECT
         if len(parts) >= 3 and parts[2] in EDGE_TYPES:
@@ -208,17 +182,15 @@ class Sandbox:
         self.graph.connect(a_id, b_id, edge_type)
         a_name = self.graph.nodes[a_id].name
         b_name = self.graph.nodes[b_id].name
-        print(f"  {a_name} —{edge_type.name}→ {b_name}")
+        print(f"  {a_name} \u2014{edge_type.name}\u2192 {b_name}")
 
     def _resolve_node(self, ref: str) -> int | None:
-        # Try as index
         try:
             idx = int(ref)
             if idx in self.graph.nodes:
                 return idx
         except ValueError:
             pass
-        # Try as name (last matching)
         for nid in reversed(list(self.graph.nodes.keys())):
             if self.graph.nodes[nid].name == ref:
                 return nid
@@ -238,58 +210,117 @@ class Sandbox:
             print("  nothing to cast")
             return
 
-        # Show what's in the circle
-        print(f"\n  ╭{'─' * 40}╮")
-        print(f"  │ {'○' if self.graph.circle_closed else '◌'}  ", end="")
+        # Show circle
+        print(f"\n  \u256d{'\u2500' * 40}\u256e")
+        print(f"  \u2502 {'\u25cb' if self.graph.circle_closed else '\u25cc'}  ", end="")
         print(" ".join(f"{self.graph.nodes[i].name}" for i in sorted(self.graph.nodes)))
-        print(f"  │ edges: ", end="")
+        print(f"  \u2502 edges: ", end="")
+        sym = {"DIRECT":"\u2192","MUTUAL":"\u2550","SEQUENCE":"\u22ef","CONDITION":"?\u2192",
+               "NEGATE":"\u2717\u2192","ITERATE":"\u21bb","LIMIT":"\u2502\u2192"}
         for e in self.graph.edges:
             a = self.graph.nodes[e.from_id].name
             b = self.graph.nodes[e.to_id].name
-            sym = {"DIRECT":"→","MUTUAL":"═","SEQUENCE":"⋯","CONDITION":"?→",
-                   "NEGATE":"✗→","ITERATE":"↻","LIMIT":"│→"}
-            print(f"{a}{sym.get(e.edge_type.name,'→')}{b} ", end="")
-        print(f"\n  ╰{'─' * 40}╯")
+            print(f"{a}{sym.get(e.edge_type.name,'\u2192')}{b} ", end="")
+        print(f"\n  \u2570{'\u2500' * 40}\u256f")
 
-        # Evaluate
-        effect = evaluate_spell(self.graph)
+        # --- SpellFormer inference ---
+        tokens = self.tokenizer.tokenize(self.graph)
+        ids = torch.tensor([tokens.token_ids])
+        roles = torch.tensor([tokens.role_ids])
+        degs = torch.tensor([tokens.degree])
 
-        # Wand modifier
-        profile = self.wand.affinity_profile().numpy()
-        wand_dominant = int(np.argmax(profile))
-        # Simple modifier: how well the wand's personality aligns with the spell
-        spell_poles = [0.0] * NUM_POLES
-        for elem in effect.force_power:
-            spell_poles[Pole.ELEMENT] += abs(effect.force_power[elem])
-        domain_map = {"body": Pole.BIOLOGY, "life": Pole.BIOLOGY,
-                      "mind": Pole.MENTAL, "matter": Pole.TRANSFORM,
-                      "space": Pole.SPACE, "time": Pole.TIME}
-        for domain in effect.domain_power:
-            p = domain_map.get(domain, Pole.ELEMENT)
-            spell_poles[p] += abs(effect.domain_power[domain])
-        total_sp = sum(spell_poles)
-        if total_sp > 0:
-            spell_poles = [v / total_sp for v in spell_poles]
-        # Dot product with profile = alignment
-        alignment = sum(p * s for p, s in zip(profile, spell_poles))
-        multiplier = 0.5 + alignment  # range ~0.5 to ~1.0
-        final_power = effect.total_power * multiplier
+        with torch.no_grad():
+            output = self.spell_former(ids, roles, degs)
+            base_raw = output["raw"]
+            spell_poles = output["pole_distribution"]
 
-        wand_mod = {"multiplier": multiplier, "final_power": final_power}
+            # WandAdapter
+            modified = self.adapter(base_raw, spell_poles)
 
-        print(format_effect(effect, wand_mod))
+            poles = torch.softmax(modified[:, :6], dim=-1)[0].numpy()
+            power = torch.sigmoid(modified[:, 6:7])[0, 0].item()
+            stability = torch.sigmoid(modified[:, 7:8])[0, 0].item()
+            area = torch.nn.functional.softplus(modified[:, 8:9])[0, 0].item()
+            duration = torch.nn.functional.softplus(modified[:, 9:10])[0, 0].item()
+            elem_int = torch.sigmoid(modified[:, 10:16])[0].numpy()
+            dom_int = torch.sigmoid(modified[:, 16:22])[0].numpy()
+            sem_emb = torch.tanh(modified[:, 22:38])[0].numpy()
+
+        # Interpret
+        desc = interpret_effect(poles, power, stability, area, duration, elem_int, dom_int, sem_emb)
+        self.last_effect_desc = desc
+
+        # Algebra comparison
+        alg_effect = evaluate_spell(self.graph)
+
+        # Display SpellFormer result
+        print(f"\n  SpellFormer: {desc.title}")
+        print(f"  {desc.description}")
+        print(f"  power={desc.power:.3f}  stability={desc.stability:.3f}  "
+              f"area={desc.area:.2f}  duration={desc.duration:.2f}")
+
+        # Element bars
+        for name, intensity in desc.active_elements[:4]:
+            bar = pole_bar(intensity, 15)
+            print(f"    {name:<8s} {bar} {intensity:.2f}")
+
+        # Domain bars
+        for name, intensity in desc.active_domains[:3]:
+            bar = pole_bar(intensity, 15)
+            print(f"    {name:<8s} {bar} {intensity:.2f}")
+
+        # Tags
+        if desc.tags:
+            print(f"  tags: {', '.join(f'{t}({s:.2f})' for t, s in desc.tags[:4])}")
+
+        # Crystallization
+        canon, crystallized = self.crystal.record_cast(tokens)
+        progress = self.crystal.approaching_crystal(tokens)
+        if crystallized:
+            entry = self.crystal.get_crystal_by_hash(canon)
+            print(f"  ** CRYSTALLIZED: {entry.name} -> token #{entry.token_id} **")
+            # Set embedding
+            with torch.no_grad():
+                h = self.spell_former.encode(ids, roles, degs)
+                pooled = self.spell_former.pool(h, ids)
+                self.crystal.set_crystal_embedding(canon, pooled[0])
+                self.spell_former.set_crystal_embedding(entry.crystal_id, pooled[0])
+        elif progress > 0 and progress < 1.0:
+            print(f"  crystal: {progress:.0%}")
+
+        # Algebra comparison (dimmed)
+        print(f"\n  (algebra: power={alg_effect.total_power:.2f} "
+              f"stability={alg_effect.stability:.2f} "
+              f"synergies={alg_effect.synergies[:2]} "
+              f"tags={sorted(alg_effect.tags)[:3]})")
 
         # Record
         self.cast_count += 1
-        success = min(final_power / 3.0, 1.0)
-        events = effect_to_events(effect, success)
-        self.pending_events.extend(events)
+        pole_aff = poles.tolist()
+        weight = 0.1 + 0.3 * min(power * 3, 1.0)
+        self.pending_events.append(Event(
+            EventType.ACTION, pole_aff,
+            Emotion(min(power, 0.9), weight, 0.4),
+            weight,
+        ))
 
         self.history.append({
             "nodes": [self.graph.nodes[i].name for i in sorted(self.graph.nodes)],
-            "effect": effect,
-            "final_power": final_power,
+            "title": desc.title,
+            "power": power,
+            "tags": [t for t, _ in desc.tags[:3]],
         })
+
+        # Grimoire
+        rune_names = [self.graph.nodes[i].name for i in sorted(self.graph.nodes)]
+        edge_triples = [(self.graph.nodes[e.from_id].name, e.edge_type.name, self.graph.nodes[e.to_id].name)
+                        for e in self.graph.edges]
+        self.grimoire.record_cast(
+            runes=rune_names, edges=edge_triples,
+            circle_closed=self.graph.circle_closed,
+            power=power, stability=stability,
+            title=desc.title, tags=[t for t, _ in desc.tags[:3]],
+        )
 
     def cmd_clear(self):
         self.graph = SpellGraph()
@@ -297,12 +328,16 @@ class Sandbox:
         print("  cleared")
 
     def cmd_wand(self):
-        profile = self.wand.affinity_profile().numpy()
-        print(f"  wand ({self.wand.param_count()} params, {self.cast_count} casts, {self.sleep_count} sleeps)")
+        profile = self.adapter.affinity_profile().numpy()
+        hex_profile = self.hexagon.profile()
+        levels = self.hexagon.levels()
+        print(f"  wand ({self.adapter.param_count()} params, {self.cast_count} casts, {self.sleep_count} sleeps)")
+        print(f"  crystals: {self.crystal.num_crystals}")
         for i, pole in enumerate(Pole):
             bar = pole_bar(profile[i] / 0.5, 20)
-            marker = " ◆" if profile[i] == max(profile) else ""
-            print(f"    {pole.name:<12s} {bar} {profile[i]:.3f}{marker}")
+            xp_bar = pole_bar(hex_profile[i], 10)
+            marker = " \u25c6" if profile[i] == max(profile) else ""
+            print(f"    {pole.name:<12s} {bar} {profile[i]:.3f}  xp:{xp_bar} lv{levels[i]}{marker}")
 
     def cmd_symbols(self):
         by_kind = {}
@@ -317,25 +352,27 @@ class Sandbox:
             return
         for i, h in enumerate(self.history[-10:]):
             syms = " ".join(h["nodes"])
-            pwr = h["final_power"]
-            tags = ", ".join(sorted(h["effect"].tags)) if h["effect"].tags else ""
-            print(f"  {i+1:3d}. [{syms}] → {pwr:.2f}  {tags}")
+            tags = ", ".join(h["tags"]) if h["tags"] else ""
+            print(f"  {i+1:3d}. [{syms}] -> {h['title']}  pwr={h['power']:.2f}  {tags}")
 
     def cmd_sleep(self):
         if not self.pending_events:
             print("  nothing to dream about")
             return
         n = len(self.pending_events)
-        losses = self.trainer.train_biography(self.pending_events, epochs=3, batch_size=max(n, 8))
+
+        # Train adapter on pending events
+        # Use a dummy base effect (uniform) for training context
+        dummy = torch.zeros(1, self.adapter.effect_dim)
+        total_loss = self.trainer.train_events(self.pending_events, dummy)
+
         self.sleep_count += 1
         self.pending_events = []
         print(f"  ...the wand dreams of {n} moments...")
-        print(f"  ...loss: {losses[-1]:.5f}...")
-        # Show profile shift
+        print(f"  ...loss: {total_loss:.5f}...")
         self.cmd_wand()
 
     def cmd_show(self):
-        """Show current circle contents."""
         if not self.graph.nodes:
             print("  circle is empty")
             return
@@ -345,16 +382,56 @@ class Sandbox:
         for e in self.graph.edges:
             a = self.graph.nodes[e.from_id].name
             b = self.graph.nodes[e.to_id].name
-            print(f"    {a} —{e.edge_type.name}→ {b}")
+            print(f"    {a} \u2014{e.edge_type.name}\u2192 {b}")
+
+    def cmd_crystal(self):
+        crystals = self.crystal.list_crystals()
+        if not crystals:
+            print("  no crystallized spells yet")
+            return
+        for c in crystals:
+            emb = "embedded" if c.embedding is not None else "pending"
+            print(f"  #{c.token_id}: {c.name} (casts={c.cast_count}, {emb})")
+
+    def cmd_grimoire(self):
+        casts = self.grimoire.recent_casts(10)
+        recipes = self.grimoire.top_recipes(5)
+        total = self.grimoire.total_casts()
+        print(f"  grimoire: {total} total casts, {len(recipes)} recipes")
+        if recipes:
+            print("  top recipes:")
+            for r in recipes:
+                print(f"    {r.name} ({'+'.join(r.runes)}) x{r.times_cast} best={r.best_power:.2f}")
+        if casts:
+            print("  recent casts:")
+            for c in casts[:5]:
+                print(f"    {c.timestamp[11:19]} {c.title} pwr={c.power:.2f} [{','.join(c.tags)}]")
+
+    def cmd_save(self):
+        os.makedirs(self._save_dir, exist_ok=True)
+        torch.save(self.adapter.state_dict(), os.path.join(self._save_dir, "adapter.pt"))
+        self.hexagon.save(os.path.join(self._save_dir, "hexagon.json"))
+        self.crystal.save()
+        print("  saved")
+
+    def cmd_tags(self):
+        if self.last_effect_desc is None:
+            print("  cast a spell first")
+            return
+        desc = self.last_effect_desc
+        print(f"  domain: {desc.primary_domain}")
+        for tag_name, sim in desc.tags:
+            bar = pole_bar(max(0, sim), 10)
+            print(f"    {tag_name:<16s} {bar} {sim:.3f}")
 
     def run(self):
-        print("Living Wand — Spell Sandbox")
+        print("Living Wand v2 \u2014 Spell Sandbox (SpellFormer)")
         print("type 'symbols' to see what you can draw")
         print()
 
         while True:
             try:
-                line = input("⟩ ").strip()
+                line = input("\u27e9 ").strip()
             except (EOFError, KeyboardInterrupt):
                 print()
                 break
@@ -365,15 +442,17 @@ class Sandbox:
             parts = line.split()
             cmd = parts[0].lower()
 
-            if cmd == "quit" or cmd == "q":
+            if cmd in ("quit", "q"):
+                self.cmd_save()
+                self.grimoire.close()
                 break
-            elif cmd == "add" or cmd == "a":
+            elif cmd in ("add", "a"):
                 if len(parts) >= 2:
                     for sym in parts[1:]:
                         self.cmd_add(sym)
                 else:
                     print("  usage: add <symbol> [symbol2 ...]")
-            elif cmd == "link" or cmd == "l":
+            elif cmd in ("link", "l"):
                 self.cmd_link(parts[1:])
             elif cmd == "circle":
                 if len(parts) >= 2:
@@ -382,18 +461,26 @@ class Sandbox:
                 self.cmd_cast()
             elif cmd == "clear":
                 self.cmd_clear()
-            elif cmd == "wand" or cmd == "w":
+            elif cmd in ("wand", "w"):
                 self.cmd_wand()
-            elif cmd == "symbols" or cmd == "sym":
+            elif cmd in ("symbols", "sym"):
                 self.cmd_symbols()
-            elif cmd == "history" or cmd == "h":
+            elif cmd in ("history", "h"):
                 self.cmd_history()
             elif cmd == "sleep":
                 self.cmd_sleep()
-            elif cmd == "show" or cmd == "s":
+            elif cmd in ("show", "s"):
                 self.cmd_show()
+            elif cmd in ("crystal", "cr"):
+                self.cmd_crystal()
+            elif cmd in ("tags", "t"):
+                self.cmd_tags()
+            elif cmd in ("grimoire", "gr"):
+                self.cmd_grimoire()
+            elif cmd == "save":
+                self.cmd_save()
             else:
-                # Try as symbol shorthand: just type the symbol name to add it
+                # Symbol shorthand
                 if cmd in SYMBOLS:
                     for sym in parts:
                         if sym in SYMBOLS:

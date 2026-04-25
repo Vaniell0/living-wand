@@ -11,17 +11,46 @@ import random
 IMG_SIZE = 64
 LINE_WIDTH_RANGE = (2, 4)
 
-# Symbols we generate — 8 base primitives (visually distinct shapes)
+# All 30 primitives + noise class
 SYMBOL_NAMES = [
+    # Elements (6)
     "fire",      # 0 — upward triangle (flame)
-    "water",     # 1 — downward wavy lines
+    "water",     # 1 — wavy lines
     "earth",     # 2 — square
     "air",       # 3 — spiral
-    "life",      # 4 — circle with dot
-    "mind",      # 5 — eye shape
-    "space",     # 6 — diamond
-    "time",      # 7 — hourglass (two triangles)
-    "noise",     # 8 — random scribbles, lines, dots (NOT a symbol)
+    "light",     # 4 — sun/star (circle + rays)
+    "dark",      # 5 — crescent moon
+    # Domains (6)
+    "body",      # 6 — stick torso
+    "mind",      # 7 — eye shape
+    "matter",    # 8 — cube (3D box)
+    "space",     # 9 — diamond
+    "time",      # 10 — hourglass
+    "life",      # 11 — circle with dot
+    # Directions (6)
+    "inward",    # 12 — arrow pointing to center
+    "outward",   # 13 — arrow pointing away
+    "up",        # 14 — chevron ^
+    "down",      # 15 — chevron v
+    "through",   # 16 — arrow with crossbar
+    "reverse",   # 17 — U-turn arrow
+    # Quantity (4)
+    "point",     # 18 — single dot
+    "flow",      # 19 — wavy arrow
+    "wave",      # 20 — sine wave
+    "all",       # 21 — circle with cross
+    # Modifiers (4)
+    "amplify",   # 22 — large up-triangle
+    "weaken",    # 23 — small down-triangle
+    "hold",      # 24 — two vertical bars (pause)
+    "dispel",    # 25 — X cross
+    # Meta (4)
+    "here",      # 26 — dot in small circle
+    "there",     # 27 — dot in dashed circle
+    "self",      # 28 — vertical line with dot on top
+    "target",    # 29 — crosshair
+    # Noise
+    "noise",     # 30 — random scribbles
 ]
 NUM_SYMBOLS = len(SYMBOL_NAMES)
 
@@ -133,9 +162,9 @@ def draw_water(img: np.ndarray):
 
 
 def draw_earth(img: np.ndarray):
-    """Square / rectangle — various proportions and rotation."""
+    """Square / rectangle — AXIS-ALIGNED (no rotation, distinguishes from diamond/space)."""
     cx, cy, s = _random_transform()
-    rot = random.gauss(0, 0.3)
+    rot = 0  # no rotation — key difference from space (diamond)
     hw = random.uniform(12, 20) * s
     hh = random.uniform(12, 20) * s
     corners = [
@@ -253,6 +282,378 @@ def draw_time(img: np.ndarray):
         _draw_line(img, *pts_bot[i], *pts_bot[(i + 1) % 3], th, j)
 
 
+def draw_light(img: np.ndarray):
+    """Sun/star — circle with 4-8 rays."""
+    cx, cy, s = _random_transform()
+    th = random.randint(*LINE_WIDTH_RANGE)
+    j = random.uniform(1.0, 2.5)
+    r = random.uniform(8, 14) * s
+    _draw_circle(img, cx, cy, r, th, j, n_points=20)
+    n_rays = random.randint(4, 8)
+    ray_len = random.uniform(8, 14) * s
+    rot = random.uniform(0, math.pi / n_rays)
+    for i in range(n_rays):
+        a = rot + 2 * math.pi * i / n_rays
+        x0, y0 = cx + r * math.cos(a), cy + r * math.sin(a)
+        x1, y1 = cx + (r + ray_len) * math.cos(a), cy + (r + ray_len) * math.sin(a)
+        _draw_line(img, x0, y0, x1, y1, th, j)
+
+
+def draw_dark(img: np.ndarray):
+    """Crescent moon."""
+    cx, cy, s = _random_transform()
+    th = random.randint(*LINE_WIDTH_RANGE)
+    j = random.uniform(1.0, 2.5)
+    r = random.uniform(14, 22) * s
+    rot = random.gauss(0, 0.3)
+    # Outer arc
+    _draw_arc(img, cx, cy, r, -math.pi * 0.6 + rot, math.pi * 0.6 + rot, th, j, 25)
+    # Inner arc (shifted to create crescent)
+    offset = r * random.uniform(0.3, 0.5)
+    inner_r = r * random.uniform(0.75, 0.95)
+    _draw_arc(img, cx + offset * math.cos(rot), cy + offset * math.sin(rot),
+              inner_r, -math.pi * 0.5 + rot, math.pi * 0.5 + rot, th, j, 20)
+
+
+def draw_body(img: np.ndarray):
+    """Stick figure torso — vertical line + two arm lines."""
+    cx, cy, s = _random_transform()
+    th = random.randint(*LINE_WIDTH_RANGE)
+    j = random.uniform(1.5, 3.0)
+    h = random.uniform(18, 26) * s
+    arm_w = random.uniform(10, 16) * s
+    arm_y = cy - h * random.uniform(0.1, 0.3)
+    # Spine
+    _draw_line(img, cx, cy - h * 0.5, cx, cy + h * 0.5, th, j)
+    # Arms
+    _draw_line(img, cx - arm_w, arm_y, cx + arm_w, arm_y, th, j)
+    # Head (small circle, sometimes)
+    if random.random() < 0.6:
+        _draw_circle(img, cx, cy - h * 0.5 - 5 * s, 4 * s, th, j, 12)
+
+
+def draw_matter(img: np.ndarray):
+    """Cube (isometric 3D box)."""
+    cx, cy, s = _random_transform()
+    th = random.randint(*LINE_WIDTH_RANGE)
+    j = random.uniform(1.5, 3.0)
+    size = random.uniform(12, 18) * s
+    d = size * 0.5  # depth offset
+    # Front face
+    fl = (cx - size, cy)
+    fr = (cx + size, cy)
+    ft = (cx - size, cy - size)
+    ftr = (cx + size, cy - size)
+    _draw_line(img, *fl, *fr, th, j)
+    _draw_line(img, *fr, *ftr, th, j)
+    _draw_line(img, *ftr, *ft, th, j)
+    _draw_line(img, *ft, *fl, th, j)
+    # Back edges (depth)
+    br = (fr[0] + d, fr[1] - d)
+    btr = (ftr[0] + d, ftr[1] - d)
+    bt = (ft[0] + d, ft[1] - d)
+    _draw_line(img, *fr, *br, th, j)
+    _draw_line(img, *ftr, *btr, th, j)
+    _draw_line(img, *br, *btr, th, j)
+    if random.random() < 0.5:
+        _draw_line(img, *ft, *bt, th, j)
+        _draw_line(img, *bt, *btr, th, j)
+
+
+def draw_inward(img: np.ndarray):
+    """Arrow pointing inward to center — ALWAYS from right side (distinguishes from outward)."""
+    cx, cy, s = _random_transform()
+    th = random.randint(*LINE_WIDTH_RANGE)
+    j = random.uniform(1.5, 3.0)
+    rot = random.gauss(0, 0.3)  # mostly from right, slight variation
+    length = random.uniform(16, 24) * s
+    # Arrow shaft from outside to center
+    ox = cx + length * math.cos(rot)
+    oy = cy + length * math.sin(rot)
+    _draw_line(img, ox, oy, cx, cy, th, j)
+    # Arrowhead
+    head_len = 6 * s
+    for da in [0.4, -0.4]:
+        hx = cx + head_len * math.cos(rot + math.pi + da)
+        hy = cy + head_len * math.sin(rot + math.pi + da)
+        _draw_line(img, cx, cy, hx, hy, th, j)
+    # Center dot
+    for dx in range(-2, 3):
+        for dy in range(-2, 3):
+            px, py = int(cx) + dx, int(cy) + dy
+            if 0 <= px < IMG_SIZE and 0 <= py < IMG_SIZE:
+                img[py, px] = 1.0
+
+
+def draw_outward(img: np.ndarray):
+    """Arrow pointing outward — ALWAYS to right side + extra tail mark (distinguishes from inward)."""
+    cx, cy, s = _random_transform()
+    th = random.randint(*LINE_WIDTH_RANGE)
+    j = random.uniform(1.5, 3.0)
+    rot = random.gauss(math.pi, 0.3)  # mostly to right (opposite of inward)
+    length = random.uniform(16, 24) * s
+    tip_x = cx + length * math.cos(rot)
+    tip_y = cy + length * math.sin(rot)
+    _draw_line(img, cx, cy, tip_x, tip_y, th, j)
+    # Arrowhead at tip
+    head_len = 6 * s
+    for da in [2.7, -2.7]:
+        hx = tip_x + head_len * math.cos(rot + da)
+        hy = tip_y + head_len * math.sin(rot + da)
+        _draw_line(img, tip_x, tip_y, hx, hy, th, j)
+    # Tail circle at origin (distinguishes from inward)
+    _draw_circle(img, cx, cy, 3 * s, max(1, th - 1), j, 10)
+
+
+def draw_up(img: np.ndarray):
+    """Chevron ^ pointing up."""
+    cx, cy, s = _random_transform()
+    th = random.randint(*LINE_WIDTH_RANGE)
+    j = random.uniform(1.5, 3.5)
+    w = random.uniform(14, 22) * s
+    h = random.uniform(12, 20) * s
+    _draw_line(img, cx - w, cy + h * 0.4, cx, cy - h * 0.4, th, j)
+    _draw_line(img, cx, cy - h * 0.4, cx + w, cy + h * 0.4, th, j)
+
+
+def draw_down(img: np.ndarray):
+    """Chevron v pointing down."""
+    cx, cy, s = _random_transform()
+    th = random.randint(*LINE_WIDTH_RANGE)
+    j = random.uniform(1.5, 3.5)
+    w = random.uniform(14, 22) * s
+    h = random.uniform(12, 20) * s
+    _draw_line(img, cx - w, cy - h * 0.4, cx, cy + h * 0.4, th, j)
+    _draw_line(img, cx, cy + h * 0.4, cx + w, cy - h * 0.4, th, j)
+
+
+def draw_through(img: np.ndarray):
+    """Horizontal arrow with vertical crossbar."""
+    cx, cy, s = _random_transform()
+    th = random.randint(*LINE_WIDTH_RANGE)
+    j = random.uniform(1.5, 3.0)
+    w = random.uniform(18, 26) * s
+    # Shaft
+    _draw_line(img, cx - w, cy, cx + w, cy, th, j)
+    # Arrowhead
+    head = 6 * s
+    _draw_line(img, cx + w, cy, cx + w - head, cy - head * 0.6, th, j)
+    _draw_line(img, cx + w, cy, cx + w - head, cy + head * 0.6, th, j)
+    # Crossbar
+    bar_h = random.uniform(8, 14) * s
+    _draw_line(img, cx, cy - bar_h, cx, cy + bar_h, th, j)
+
+
+def draw_reverse(img: np.ndarray):
+    """U-turn / curved return arrow."""
+    cx, cy, s = _random_transform()
+    th = random.randint(*LINE_WIDTH_RANGE)
+    j = random.uniform(1.5, 3.0)
+    r = random.uniform(12, 18) * s
+    # U-arc (top half)
+    _draw_arc(img, cx, cy, r, math.pi, 2 * math.pi, th, j, 20)
+    # Left leg down
+    _draw_line(img, cx - r, cy, cx - r, cy + r * 0.6, th, j)
+    # Right leg with arrowhead
+    _draw_line(img, cx + r, cy, cx + r, cy + r * 0.6, th, j)
+    head = 5 * s
+    _draw_line(img, cx + r, cy + r * 0.6, cx + r - head, cy + r * 0.6 - head, th, j)
+    _draw_line(img, cx + r, cy + r * 0.6, cx + r + head, cy + r * 0.6 - head, th, j)
+
+
+def draw_point(img: np.ndarray):
+    """Single dot — large filled circle."""
+    cx, cy, s = _random_transform()
+    r = int(random.uniform(4, 8) * s)
+    for dx in range(-r, r + 1):
+        for dy in range(-r, r + 1):
+            if dx * dx + dy * dy <= r * r:
+                px, py = int(cx) + dx, int(cy) + dy
+                if 0 <= px < IMG_SIZE and 0 <= py < IMG_SIZE:
+                    img[py, px] = 1.0
+
+
+def draw_flow(img: np.ndarray):
+    """Wavy arrow → rightward — with straight baseline underneath (distinguishes from wave)."""
+    cx, cy, s = _random_transform()
+    th = random.randint(*LINE_WIDTH_RANGE)
+    j = random.uniform(1.0, 2.5)
+    w = random.uniform(22, 32) * s
+    amp = random.uniform(4, 8) * s
+    freq = random.uniform(1.5, 2.5)
+    pts = []
+    for i in range(25):
+        t = i / 24
+        x = cx - w / 2 + w * t
+        y = cy + amp * math.sin(t * freq * math.pi * 2)
+        pts.append((x, y))
+    for i in range(len(pts) - 1):
+        _draw_line(img, *pts[i], *pts[i + 1], th, j)
+    # Large arrowhead at end
+    head = 8 * s
+    _draw_line(img, *pts[-1], pts[-1][0] - head, pts[-1][1] - head * 0.6, th + 1, j)
+    _draw_line(img, *pts[-1], pts[-1][0] - head, pts[-1][1] + head * 0.6, th + 1, j)
+    # Straight baseline (distinguishes from wave)
+    _draw_line(img, cx - w / 2, cy + amp + 6 * s, cx + w / 2, cy + amp + 6 * s, max(1, th - 1), j)
+
+
+def draw_wave(img: np.ndarray):
+    """Sine wave ∿ (no arrow)."""
+    cx, cy, s = _random_transform()
+    th = random.randint(*LINE_WIDTH_RANGE)
+    j = random.uniform(1.0, 2.5)
+    w = random.uniform(24, 34) * s
+    amp = random.uniform(6, 12) * s
+    freq = random.uniform(1.5, 3.0)
+    pts = []
+    for i in range(30):
+        t = i / 29
+        x = cx - w / 2 + w * t
+        y = cy + amp * math.sin(t * freq * math.pi * 2)
+        pts.append((x, y))
+    for i in range(len(pts) - 1):
+        _draw_line(img, *pts[i], *pts[i + 1], th, j)
+
+
+def draw_all(img: np.ndarray):
+    """Circle with FULL cross extending beyond circle (⊕, distinguishes from air/life)."""
+    cx, cy, s = _random_transform()
+    th = random.randint(*LINE_WIDTH_RANGE)
+    j = random.uniform(1.5, 3.0)
+    r = random.uniform(12, 18) * s
+    _draw_circle(img, cx, cy, r, th, j, 30)
+    # Cross extends BEYOND circle (key visual difference)
+    ext = r + 6 * s
+    _draw_line(img, cx - ext, cy, cx + ext, cy, th, j)
+    _draw_line(img, cx, cy - ext, cx, cy + ext, th, j)
+
+
+def draw_amplify(img: np.ndarray):
+    """Double upward triangle — always has inner triangle (distinguishes from fire)."""
+    cx, cy, s = _random_transform()
+    th = random.randint(2, 4)
+    j = random.uniform(1.5, 3.5)
+    h = random.uniform(22, 30) * s
+    w = random.uniform(18, 26) * s
+    top = (cx, cy - h * 0.5)
+    bl = (cx - w, cy + h * 0.5)
+    br = (cx + w, cy + h * 0.5)
+    _draw_line(img, *bl, *top, th, j)
+    _draw_line(img, *top, *br, th, j)
+    _draw_line(img, *br, *bl, th, j)
+    # Inner triangle — ALWAYS present (key difference from fire)
+    s2 = random.uniform(0.4, 0.6)
+    _draw_line(img, cx, cy - h * 0.5 * s2, cx - w * s2, cy + h * 0.5 * s2, max(1, th - 1), j)
+    _draw_line(img, cx, cy - h * 0.5 * s2, cx + w * s2, cy + h * 0.5 * s2, max(1, th - 1), j)
+    _draw_line(img, cx - w * s2, cy + h * 0.5 * s2, cx + w * s2, cy + h * 0.5 * s2, max(1, th - 1), j)
+
+
+def draw_weaken(img: np.ndarray):
+    """Small downward-pointing triangle."""
+    cx, cy, s = _random_transform()
+    th = random.randint(*LINE_WIDTH_RANGE)
+    j = random.uniform(1.5, 3.5)
+    h = random.uniform(12, 18) * s
+    w = random.uniform(10, 16) * s
+    bot = (cx, cy + h * 0.5)
+    tl = (cx - w, cy - h * 0.5)
+    tr = (cx + w, cy - h * 0.5)
+    _draw_line(img, *tl, *bot, th, j)
+    _draw_line(img, *bot, *tr, th, j)
+    _draw_line(img, *tr, *tl, th, j)
+
+
+def draw_hold(img: np.ndarray):
+    """Two vertical bars ‖ (pause symbol)."""
+    cx, cy, s = _random_transform()
+    th = random.randint(2, 4)
+    j = random.uniform(1.5, 3.0)
+    h = random.uniform(18, 26) * s
+    gap = random.uniform(8, 14) * s
+    _draw_line(img, cx - gap, cy - h / 2, cx - gap, cy + h / 2, th, j)
+    _draw_line(img, cx + gap, cy - h / 2, cx + gap, cy + h / 2, th, j)
+
+
+def draw_dispel(img: np.ndarray):
+    """X cross."""
+    cx, cy, s = _random_transform()
+    th = random.randint(*LINE_WIDTH_RANGE)
+    j = random.uniform(1.5, 3.5)
+    size = random.uniform(14, 22) * s
+    _draw_line(img, cx - size, cy - size, cx + size, cy + size, th, j)
+    _draw_line(img, cx + size, cy - size, cx - size, cy + size, th, j)
+
+
+def draw_here(img: np.ndarray):
+    """Dot inside small circle + crosshair lines (distinguishes from life)."""
+    cx, cy, s = _random_transform()
+    th = random.randint(*LINE_WIDTH_RANGE)
+    j = random.uniform(1.5, 3.0)
+    r = random.uniform(6, 10) * s
+    _draw_circle(img, cx, cy, r, th, j, 18)
+    # Small crosshair marks outside circle (distinguishes from life)
+    mark = r + 4 * s
+    _draw_line(img, cx - mark, cy, cx - r - 1, cy, max(1, th - 1), j)
+    _draw_line(img, cx + r + 1, cy, cx + mark, cy, max(1, th - 1), j)
+    # Dot
+    dot_r = max(2, int(3 * s))
+    for dx in range(-dot_r, dot_r + 1):
+        for dy in range(-dot_r, dot_r + 1):
+            if dx * dx + dy * dy <= dot_r * dot_r:
+                px, py = int(cx) + dx, int(cy) + dy
+                if 0 <= px < IMG_SIZE and 0 <= py < IMG_SIZE:
+                    img[py, px] = 1.0
+
+
+def draw_there(img: np.ndarray):
+    """Dot inside dashed circle."""
+    cx, cy, s = _random_transform()
+    th = random.randint(*LINE_WIDTH_RANGE)
+    j = random.uniform(1.5, 3.0)
+    r = random.uniform(12, 18) * s
+    # Dashed circle
+    n_dashes = random.randint(6, 10)
+    for i in range(n_dashes):
+        a0 = 2 * math.pi * i / n_dashes
+        a1 = a0 + math.pi / n_dashes * 0.7
+        _draw_arc(img, cx, cy, r, a0, a1, th, j, 5)
+    # Dot
+    dot_r = max(2, int(3 * s))
+    for dx in range(-dot_r, dot_r + 1):
+        for dy in range(-dot_r, dot_r + 1):
+            if dx * dx + dy * dy <= dot_r * dot_r:
+                px, py = int(cx) + dx, int(cy) + dy
+                if 0 <= px < IMG_SIZE and 0 <= py < IMG_SIZE:
+                    img[py, px] = 1.0
+
+
+def draw_self(img: np.ndarray):
+    """Vertical line with dot/circle on top (person-like)."""
+    cx, cy, s = _random_transform()
+    th = random.randint(*LINE_WIDTH_RANGE)
+    j = random.uniform(1.5, 3.0)
+    h = random.uniform(20, 28) * s
+    # Vertical line
+    _draw_line(img, cx, cy - h * 0.2, cx, cy + h * 0.5, th, j)
+    # Head dot/circle
+    head_r = random.uniform(4, 7) * s
+    _draw_circle(img, cx, cy - h * 0.2 - head_r, head_r, th, j, 14)
+
+
+def draw_target(img: np.ndarray):
+    """Crosshair (+) with small circle."""
+    cx, cy, s = _random_transform()
+    th = random.randint(*LINE_WIDTH_RANGE)
+    j = random.uniform(1.5, 3.0)
+    size = random.uniform(14, 22) * s
+    # Cross
+    _draw_line(img, cx - size, cy, cx + size, cy, th, j)
+    _draw_line(img, cx, cy - size, cx, cy + size, th, j)
+    # Center circle
+    r = random.uniform(4, 8) * s
+    _draw_circle(img, cx, cy, r, th, j, 14)
+
+
 def draw_noise(img: np.ndarray):
     """Random scribbles — NOT a symbol. Lines, dots, scratches."""
     th = random.randint(*LINE_WIDTH_RANGE)
@@ -293,8 +694,19 @@ def draw_noise(img: np.ndarray):
 
 
 DRAW_FUNCTIONS = [
-    draw_fire, draw_water, draw_earth, draw_air,
-    draw_life, draw_mind, draw_space, draw_time,
+    # Elements (6)
+    draw_fire, draw_water, draw_earth, draw_air, draw_light, draw_dark,
+    # Domains (6)
+    draw_body, draw_mind, draw_matter, draw_space, draw_time, draw_life,
+    # Directions (6)
+    draw_inward, draw_outward, draw_up, draw_down, draw_through, draw_reverse,
+    # Quantity (4)
+    draw_point, draw_flow, draw_wave, draw_all,
+    # Modifiers (4)
+    draw_amplify, draw_weaken, draw_hold, draw_dispel,
+    # Meta (4)
+    draw_here, draw_there, draw_self, draw_target,
+    # Noise
     draw_noise,
 ]
 

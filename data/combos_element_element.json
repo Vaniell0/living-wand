@@ -1,0 +1,116 @@
+{
+  "_doc": "Element × Element interactions. All 15 unique pairs from 6 elements. Each pair has: type (synergy/cancel/neutral/transform), multiplier, result tags, and a description for effect interpretation.",
+
+  "fire+water": {
+    "type": "transform",
+    "multiplier": 0.8,
+    "products": ["steam"],
+    "tags": ["steam", "obscuring", "scalding"],
+    "cancel_factor": 0.3,
+    "description": "Огонь и вода порождают пар — обжигающий туман, скрывающий и наносящий урон"
+  },
+  "fire+air": {
+    "type": "synergy",
+    "multiplier": 1.5,
+    "products": ["storm"],
+    "tags": ["storm", "wildfire", "spreading"],
+    "description": "Ветер раздувает пламя — огненный шторм, неуправляемый и обширный"
+  },
+  "fire+earth": {
+    "type": "synergy",
+    "multiplier": 1.4,
+    "products": ["forge", "lava"],
+    "tags": ["forge", "smelting", "lava", "hardening"],
+    "description": "Огонь плавит землю — лава, ковка, закалка металла"
+  },
+  "fire+light": {
+    "type": "synergy",
+    "multiplier": 1.3,
+    "products": ["radiance"],
+    "tags": ["radiance", "purifying_flame", "brilliance", "solar"],
+    "description": "Чистый свет усиливает огонь — солнечное сияние, очищающее пламя"
+  },
+  "fire+dark": {
+    "type": "synergy",
+    "multiplier": 1.2,
+    "products": ["hellfire"],
+    "tags": ["hellfire", "shadow_flame", "consuming", "cursed_fire"],
+    "description": "Тёмный огонь — проклятое пламя, пожирающее не только плоть но и дух"
+  },
+
+  "water+air": {
+    "type": "synergy",
+    "multiplier": 1.3,
+    "products": ["mist", "rain"],
+    "tags": ["mist", "rain", "humidity", "weather"],
+    "description": "Вода и воздух — туман, дождь, изменение погоды"
+  },
+  "water+earth": {
+    "type": "synergy",
+    "multiplier": 1.3,
+    "products": ["mud", "clay"],
+    "tags": ["solid", "mud", "clay", "fertile", "swamp"],
+    "description": "Вода и земля — грязь, глина, плодородная почва, болото"
+  },
+  "water+light": {
+    "type": "synergy",
+    "multiplier": 1.2,
+    "products": ["rainbow", "prism"],
+    "tags": ["rainbow", "prism", "refraction", "clarity"],
+    "description": "Свет преломляется в воде — радуга, призма, кристальная ясность"
+  },
+  "water+dark": {
+    "type": "synergy",
+    "multiplier": 1.2,
+    "products": ["abyss"],
+    "tags": ["abyss", "deep_water", "drowning", "pressure"],
+    "description": "Тёмная вода — бездна, глубина, давящая тьма под водой"
+  },
+
+  "air+earth": {
+    "type": "transform",
+    "multiplier": 0.9,
+    "products": ["dust", "erosion"],
+    "tags": ["dust", "erosion", "sandstorm", "weathering"],
+    "cancel_factor": 0.5,
+    "description": "Ветер выветривает землю — пыль, песчаная буря, эрозия"
+  },
+  "air+light": {
+    "type": "synergy",
+    "multiplier": 1.3,
+    "products": ["flash"],
+    "tags": ["flash", "lightning_visual", "aurora", "mirage"],
+    "description": "Свет в воздухе — вспышка, мираж, северное сияние"
+  },
+  "air+dark": {
+    "type": "synergy",
+    "multiplier": 1.1,
+    "products": ["void_wind"],
+    "tags": ["void_wind", "suffocation", "vacuum", "silence"],
+    "description": "Тёмный ветер — вакуум, удушье, абсолютная тишина"
+  },
+
+  "earth+light": {
+    "type": "synergy",
+    "multiplier": 1.2,
+    "products": ["crystal", "gem"],
+    "tags": ["crystal", "gem", "geode", "brilliance_stone"],
+    "description": "Свет кристаллизуется в земле — драгоценные камни, жеоды, светящиеся минералы"
+  },
+  "earth+dark": {
+    "type": "synergy",
+    "multiplier": 1.2,
+    "products": ["cave"],
+    "tags": ["cave", "underground", "burial", "fossil"],
+    "description": "Тьма под землёй — пещеры, захоронения, окаменелости"
+  },
+
+  "light+dark": {
+    "type": "transform",
+    "multiplier": 0.6,
+    "products": ["twilight", "eclipse"],
+    "tags": ["twilight", "eclipse", "duality", "balance", "liminal"],
+    "cancel_factor": 0.2,
+    "description": "Свет и тьма — сумерки, затмение, состояние между. Сильная отмена, но рождает двойственность"
+  }
+}

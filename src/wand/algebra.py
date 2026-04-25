@@ -46,22 +46,26 @@ class Element(IntEnum):
     DARK = 5
 
 
-# Cancellation pairs — when connected, they partially annihilate
-CANCEL_PAIRS = {
-    frozenset({Element.FIRE, Element.WATER}): 0.3,   # mostly cancel
-    frozenset({Element.LIGHT, Element.DARK}): 0.2,   # strongly cancel
-    frozenset({Element.AIR, Element.EARTH}): 0.5,    # partially cancel
-}
+# Data-driven combos — loaded from JSON via combo_data.py
+# Lazy import to avoid circular dependency (combo_data imports Element from here)
+_combo_data = None
 
-# Synergy pairs — when combined, they produce emergent effects
-SYNERGY_PAIRS = {
-    frozenset({Element.FIRE, Element.AIR}): ("storm", 1.5),      # fire storm
-    frozenset({Element.WATER, Element.EARTH}): ("solid", 1.3),   # mud/clay
-    frozenset({Element.FIRE, Element.EARTH}): ("forge", 1.4),    # smelting
-    frozenset({Element.LIGHT, Element.AIR}): ("flash", 1.3),     # blinding flash
-    frozenset({Element.DARK, Element.WATER}): ("abyss", 1.2),    # deep water
-    frozenset({Element.DARK, Element.EARTH}): ("cave", 1.2),     # underground
-}
+def _combos():
+    global _combo_data
+    if _combo_data is None:
+        from . import combo_data as _cd
+        _combo_data = _cd
+    return _combo_data
+
+# Backward-compatible module-level names (populated on first access)
+# game.py imports these but never iterates them at module level,
+# so lazy property via __getattr__ works fine.
+def __getattr__(name):
+    if name == "SYNERGY_PAIRS":
+        return _combos().SYNERGY_PAIRS
+    if name == "CANCEL_PAIRS":
+        return _combos().CANCEL_PAIRS
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 # ═══════════════════════════════════════════
@@ -254,10 +258,10 @@ def evaluate_spell(graph: SpellGraph) -> SpellEffect:
             continue
 
         if edge.edge_type == EdgeType.DIRECT:
-            _resolve_direct(sig_from, sig_to, effect)
+            _resolve_direct(sig_from, sig_to, effect, graph, edge.from_id, edge.to_id)
 
         elif edge.edge_type == EdgeType.MUTUAL:
-            _resolve_mutual(sig_from, sig_to, effect)
+            _resolve_mutual(sig_from, sig_to, effect, graph, edge.from_id, edge.to_id)
 
         elif edge.edge_type == EdgeType.SEQUENCE:
             # Sequence: first signal's tags carry over
@@ -282,6 +286,12 @@ def evaluate_spell(graph: SpellGraph) -> SpellEffect:
             sig_to.magnitude *= 0.8
             effect.area *= 0.5
             sig_to.tags.add("focused")
+
+    # Step 2b: detect triple synergies (3 nodes all MUTUAL-connected)
+    _detect_triples(graph, signals, effect)
+
+    # Step 2c: detect modifier combos (two modifiers targeting same node)
+    _detect_modifier_combos(graph, signals, effect)
 
     # Step 3: aggregate signals into effect
     for nid, sig in signals.items():
@@ -335,41 +345,53 @@ def evaluate_spell(graph: SpellGraph) -> SpellEffect:
     return effect
 
 
-def _resolve_direct(source: Signal, target: Signal, effect: SpellEffect):
+def _resolve_direct(source: Signal, target: Signal, effect: SpellEffect,
+                    graph: SpellGraph, from_id: int, to_id: int):
     """DIRECT edge: source modifies/targets the target signal."""
+    cd = _combos()
 
     # Modifier → anything: amplify/weaken/hold/dispel
     if source.kind == SignalKind.MODIFIER:
-        if "amplify" in source.tags or source.element is None:
-            # Generic modifier behavior based on name would need node ref
-            # For now: positive modifier = boost, negative = reduce
-            if source.magnitude > 0:
-                target.magnitude *= 1.5
-                target.tags.add("amplified")
-            else:
-                target.magnitude *= 0.5
-                target.tags.add("weakened")
+        if source.magnitude > 0:
+            target.magnitude *= 1.5
+            target.tags.add("amplified")
+        else:
+            target.magnitude *= 0.5
+            target.tags.add("weakened")
 
     # Vector → anything: adds directional tag
     elif source.kind == SignalKind.VECTOR:
-        target.tags.add(f"directed")
+        target.tags.add("directed")
 
     # Force → Force (different elements via DIRECT = one attacks the other)
     elif source.kind == SignalKind.FORCE and target.kind == SignalKind.FORCE:
         if source.element is not None and target.element is not None:
             pair = frozenset({source.element, target.element})
-            if pair in CANCEL_PAIRS:
-                factor = CANCEL_PAIRS[pair]
+            combo = cd.ELEMENT_PAIRS.get(pair)
+            if combo and combo.cancel_factor is not None:
+                factor = combo.cancel_factor
                 source.magnitude *= factor
                 target.magnitude *= factor
                 effect.cancellations.append(
                     f"{source.element.name}→{target.element.name} (×{factor:.1f})")
                 effect.stability *= 0.8
 
-    # Force → Domain: elemental influence on domain
+    # Force → Domain: elemental influence on domain (data-driven)
     elif source.kind == SignalKind.FORCE and target.kind == SignalKind.DOMAIN:
-        target.magnitude *= 1.2
-        target.tags.add(f"elemental-{source.element.name}" if source.element else "elemental")
+        if source.element is not None:
+            domain_name = graph.nodes[to_id].name
+            key = (source.element, domain_name)
+            combo = cd.ELEMENT_DOMAIN.get(key)
+            if combo:
+                target.magnitude *= combo.multiplier
+                for tag in combo.tags:
+                    target.tags.add(tag)
+            else:
+                target.magnitude *= 1.2
+            target.tags.add(f"elemental-{source.element.name}")
+        else:
+            target.magnitude *= 1.2
+            target.tags.add("elemental")
 
     # Domain → Force: domain focuses the element
     elif source.kind == SignalKind.DOMAIN and target.kind == SignalKind.FORCE:
@@ -377,56 +399,182 @@ def _resolve_direct(source: Signal, target: Signal, effect: SpellEffect):
         effect.stability *= 1.1
 
 
-def _resolve_mutual(sig_a: Signal, sig_b: Signal, effect: SpellEffect):
+def _resolve_mutual(sig_a: Signal, sig_b: Signal, effect: SpellEffect,
+                    graph: SpellGraph, nid_a: int, nid_b: int):
     """MUTUAL edge: two signals combine/synthesize."""
+    cd = _combos()
 
-    # Force + Force: check synergy/cancellation
+    # Force + Force: data-driven element pairs
     if sig_a.kind == SignalKind.FORCE and sig_b.kind == SignalKind.FORCE:
         if sig_a.element is not None and sig_b.element is not None:
-            pair = frozenset({sig_a.element, sig_b.element})
-
             # Same element: reinforcement
             if sig_a.element == sig_b.element:
                 sig_a.magnitude *= 1.8
-                sig_b.magnitude *= 0.2  # absorbed into A
+                sig_b.magnitude *= 0.2
                 sig_a.tags.add("reinforced")
                 return
 
-            # Synergy check
-            if pair in SYNERGY_PAIRS:
-                name, mult = SYNERGY_PAIRS[pair]
-                sig_a.magnitude *= mult
-                sig_b.magnitude *= mult
-                sig_a.tags.add(name)
-                sig_b.tags.add(name)
-                effect.synergies.append(
-                    f"{sig_a.element.name}+{sig_b.element.name} → {name} (×{mult})")
-                return
+            pair = frozenset({sig_a.element, sig_b.element})
+            combo = cd.ELEMENT_PAIRS.get(pair)
+            if combo:
+                if combo.type == "synergy":
+                    sig_a.magnitude *= combo.multiplier
+                    sig_b.magnitude *= combo.multiplier
+                    for tag in combo.tags:
+                        sig_a.tags.add(tag)
+                        sig_b.tags.add(tag)
+                    name = combo.products[0] if combo.products else "synergy"
+                    effect.synergies.append(
+                        f"{sig_a.element.name}+{sig_b.element.name} → {name} (×{combo.multiplier})")
+                elif combo.type == "transform":
+                    # Partial cancel + emergent product
+                    factor = combo.cancel_factor or 0.5
+                    sig_a.magnitude *= combo.multiplier
+                    sig_b.magnitude *= combo.multiplier
+                    for tag in combo.tags:
+                        sig_a.tags.add(tag)
+                    name = combo.products[0] if combo.products else "transform"
+                    effect.synergies.append(
+                        f"{sig_a.element.name}+{sig_b.element.name} → {name} (×{combo.multiplier})")
+                    effect.stability *= 0.8
+                elif combo.type == "cancel":
+                    factor = combo.cancel_factor or 0.3
+                    sig_a.magnitude *= factor
+                    sig_b.magnitude *= factor
+                    effect.cancellations.append(
+                        f"{sig_a.element.name}↔{sig_b.element.name} (×{factor:.1f})")
+                    effect.stability *= 0.6
+            return
 
-            # Cancellation check
-            if pair in CANCEL_PAIRS:
-                factor = CANCEL_PAIRS[pair]
-                sig_a.magnitude *= factor
-                sig_b.magnitude *= factor
-                effect.cancellations.append(
-                    f"{sig_a.element.name}↔{sig_b.element.name} (×{factor:.1f})")
-                effect.stability *= 0.6
-                return
-
-    # Domain + Domain: broader effect
+    # Domain + Domain: data-driven
     if sig_a.kind == SignalKind.DOMAIN and sig_b.kind == SignalKind.DOMAIN:
-        sig_a.tags.add("multi-domain")
-        sig_b.tags.add("multi-domain")
-        effect.stability *= 0.9  # harder to control
+        name_a = graph.nodes[nid_a].name
+        name_b = graph.nodes[nid_b].name
+        pair_key = frozenset({name_a, name_b})
+        combo = cd.DOMAIN_PAIRS.get(pair_key)
+        if combo:
+            sig_a.magnitude *= combo.multiplier
+            for tag in combo.tags:
+                sig_a.tags.add(tag)
+                sig_b.tags.add(tag)
+            effect.stability *= combo.stability_penalty
+        else:
+            sig_a.tags.add("multi-domain")
+            sig_b.tags.add("multi-domain")
+            effect.stability *= 0.9
+        return
 
-    # Force + Domain: infuse domain with element
+    # Force + Domain: data-driven infusion
     kinds = {sig_a.kind, sig_b.kind}
     if kinds == {SignalKind.FORCE, SignalKind.DOMAIN}:
         force_sig = sig_a if sig_a.kind == SignalKind.FORCE else sig_b
         domain_sig = sig_a if sig_a.kind == SignalKind.DOMAIN else sig_b
-        domain_sig.magnitude *= 1.3
-        domain_sig.tags.add(f"infused-{force_sig.element.name}" if force_sig.element else "infused")
+        force_nid = nid_a if sig_a.kind == SignalKind.FORCE else nid_b
+        domain_nid = nid_a if sig_a.kind == SignalKind.DOMAIN else nid_b
+
+        if force_sig.element is not None:
+            domain_name = graph.nodes[domain_nid].name
+            key = (force_sig.element, domain_name)
+            combo = _combos().ELEMENT_DOMAIN.get(key)
+            if combo:
+                domain_sig.magnitude *= combo.multiplier
+                for tag in combo.tags:
+                    domain_sig.tags.add(tag)
+                    force_sig.tags.add(tag)
+            else:
+                domain_sig.magnitude *= 1.3
+            domain_sig.tags.add(f"infused-{force_sig.element.name}")
+        else:
+            domain_sig.magnitude *= 1.3
+            domain_sig.tags.add("infused")
         effect.tags.add("infused")
+
+
+def _detect_triples(graph: SpellGraph, signals: dict[int, Signal], effect: SpellEffect):
+    """Detect triple synergies: 3 nodes all MUTUAL-connected."""
+    cd = _combos()
+    if not cd.TRIPLE_COMBOS:
+        return
+
+    # Build set of MUTUAL pairs
+    mutual_pairs: set[frozenset[int]] = set()
+    for edge in graph.edges:
+        if edge.edge_type == EdgeType.MUTUAL:
+            mutual_pairs.add(frozenset({edge.from_id, edge.to_id}))
+
+    if len(mutual_pairs) < 3:
+        return
+
+    # Find cliques of 3
+    node_ids = list(graph.nodes.keys())
+    applied = set()
+    for i in range(len(node_ids)):
+        for j in range(i + 1, len(node_ids)):
+            for k in range(j + 1, len(node_ids)):
+                a, b, c = node_ids[i], node_ids[j], node_ids[k]
+                if (frozenset({a, b}) in mutual_pairs and
+                    frozenset({a, c}) in mutual_pairs and
+                    frozenset({b, c}) in mutual_pairs):
+                    # Check if this triple has a combo
+                    names = frozenset({
+                        graph.nodes[a].name,
+                        graph.nodes[b].name,
+                        graph.nodes[c].name,
+                    })
+                    if names in applied:
+                        continue
+                    combo = cd.TRIPLE_COMBOS.get(names)
+                    if combo:
+                        applied.add(names)
+                        # Apply triple bonus on top of pairwise
+                        boost = combo.multiplier / 1.3  # relative to avg pairwise
+                        for nid in (a, b, c):
+                            if nid in signals:
+                                signals[nid].magnitude *= boost
+                                for tag in combo.tags:
+                                    signals[nid].tags.add(tag)
+                        effect.synergies.append(
+                            f"{'∆'.join(sorted(names))} (×{combo.multiplier})")
+
+
+def _detect_modifier_combos(graph: SpellGraph, signals: dict[int, Signal],
+                            effect: SpellEffect):
+    """Detect modifier combos: two modifiers both DIRECT into the same target."""
+    cd = _combos()
+
+    # Build: target_nid -> list of modifier node names
+    modifier_targets: dict[int, list[tuple[int, str]]] = {}
+    for edge in graph.edges:
+        if edge.edge_type == EdgeType.DIRECT:
+            from_node = graph.nodes.get(edge.from_id)
+            if from_node and from_node.signal_kind == SignalKind.MODIFIER:
+                modifier_targets.setdefault(edge.to_id, []).append(
+                    (edge.from_id, from_node.name))
+
+    for target_nid, modifiers in modifier_targets.items():
+        if len(modifiers) < 2:
+            continue
+        # Check all pairs
+        for i in range(len(modifiers)):
+            for j in range(i + 1, len(modifiers)):
+                nid_a, name_a = modifiers[i]
+                nid_b, name_b = modifiers[j]
+
+                # Same-name combo (amplify+amplify, hold+hold, etc.)
+                if name_a == name_b:
+                    combo = cd.SAME_MODIFIER_COMBOS.get(name_a)
+                else:
+                    pair_key = frozenset({name_a, name_b})
+                    combo = cd.MODIFIER_COMBOS.get(pair_key)
+
+                if combo:
+                    target_sig = signals.get(target_nid)
+                    if target_sig:
+                        target_sig.magnitude *= combo.multiplier
+                        for tag in combo.tags:
+                            target_sig.tags.add(tag)
+                    if combo.stability_penalty is not None:
+                        effect.stability *= combo.stability_penalty
 
 
 # ═══════════════════════════════════════════

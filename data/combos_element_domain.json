@@ -1,0 +1,189 @@
+{
+  "_doc": "Element × Domain interactions. 6 elements × 6 domains = 36 combinations. Each describes what happens when an elemental force is applied to a domain of influence. Multiplier applies to domain signal magnitude.",
+
+  "fire+body": {
+    "multiplier": 1.3,
+    "tags": ["fever", "cauterize", "inflammation", "warming_body"],
+    "description": "Огонь + тело — лихорадка, прижигание ран, воспаление, согревание"
+  },
+  "fire+mind": {
+    "multiplier": 1.2,
+    "tags": ["rage", "passion", "inspiration", "burning_idea"],
+    "description": "Огонь + разум — ярость, страсть, вдохновение, горящая идея"
+  },
+  "fire+matter": {
+    "multiplier": 1.4,
+    "tags": ["smelting", "forging", "tempering", "cooking"],
+    "description": "Огонь + материя — плавка, ковка, закалка, приготовление пищи"
+  },
+  "fire+space": {
+    "multiplier": 1.1,
+    "tags": ["beacon", "signal_fire", "scorched_earth", "firewall"],
+    "description": "Огонь + пространство — маяк, сигнальный огонь, выжженная земля, огненная стена"
+  },
+  "fire+time": {
+    "multiplier": 1.0,
+    "tags": ["ash", "ember", "eternal_flame", "burnout"],
+    "description": "Огонь + время — пепел прошлого, тлеющие угли, вечное пламя, выгорание"
+  },
+  "fire+life": {
+    "multiplier": 1.3,
+    "tags": ["phoenix", "rebirth", "cremation", "warmth_of_life"],
+    "description": "Огонь + жизнь — феникс, возрождение через огонь, кремация, тепло жизни"
+  },
+
+  "water+body": {
+    "multiplier": 1.3,
+    "tags": ["hydration", "blood", "cleansing_body", "sweat"],
+    "description": "Вода + тело — гидратация, кровь, очищение тела, пот"
+  },
+  "water+mind": {
+    "multiplier": 1.2,
+    "tags": ["calm", "flow_state", "dreams", "subconscious"],
+    "description": "Вода + разум — спокойствие, поток сознания, сны, подсознание"
+  },
+  "water+matter": {
+    "multiplier": 1.3,
+    "tags": ["dissolving", "erosion_matter", "washing", "rust"],
+    "description": "Вода + материя — растворение, эрозия, промывка, ржавчина"
+  },
+  "water+space": {
+    "multiplier": 1.1,
+    "tags": ["flood", "ocean", "current", "tide"],
+    "description": "Вода + пространство — потоп, океан, течение, приливы"
+  },
+  "water+time": {
+    "multiplier": 1.0,
+    "tags": ["ice_age", "thaw", "slow_drip", "patience"],
+    "description": "Вода + время — ледниковый период, таяние, капля точит камень, терпение"
+  },
+  "water+life": {
+    "multiplier": 1.4,
+    "tags": ["growth", "nurture", "spring", "fertility"],
+    "description": "Вода + жизнь — рост, питание, весна, плодородие"
+  },
+
+  "air+body": {
+    "multiplier": 1.2,
+    "tags": ["breath", "levitation_body", "wind_speed", "lung"],
+    "description": "Воздух + тело — дыхание, левитация, скорость ветра, лёгкие"
+  },
+  "air+mind": {
+    "multiplier": 1.3,
+    "tags": ["clarity_thought", "whisper", "rumor", "brainstorm"],
+    "description": "Воздух + разум — ясность мысли, шёпот, слухи, мозговой штурм"
+  },
+  "air+matter": {
+    "multiplier": 1.1,
+    "tags": ["oxidation", "drying_matter", "wind_shaping", "pneumatic"],
+    "description": "Воздух + материя — окисление, сушка, формовка ветром, пневматика"
+  },
+  "air+space": {
+    "multiplier": 1.3,
+    "tags": ["flight", "telekinesis", "gust", "atmosphere"],
+    "description": "Воздух + пространство — полёт, телекинез, порыв, атмосфера"
+  },
+  "air+time": {
+    "multiplier": 1.0,
+    "tags": ["weathering_time", "seasonal_wind", "echo", "fading"],
+    "description": "Воздух + время — выветривание, сезонный ветер, эхо, угасание"
+  },
+  "air+life": {
+    "multiplier": 1.2,
+    "tags": ["pollen", "seed_spread", "birdsong", "fresh_air"],
+    "description": "Воздух + жизнь — пыльца, разнос семян, пение птиц, свежий воздух"
+  },
+
+  "earth+body": {
+    "multiplier": 1.3,
+    "tags": ["bone", "muscle", "toughness", "grounding"],
+    "description": "Земля + тело — кости, мышцы, выносливость, заземление"
+  },
+  "earth+mind": {
+    "multiplier": 1.1,
+    "tags": ["stubbornness", "meditation", "memory_stone", "patience_earth"],
+    "description": "Земля + разум — упрямство, медитация, память камня, земное терпение"
+  },
+  "earth+matter": {
+    "multiplier": 1.4,
+    "tags": ["mining", "sculpting", "building", "foundation"],
+    "description": "Земля + материя — добыча, скульптура, строительство, фундамент"
+  },
+  "earth+space": {
+    "multiplier": 1.2,
+    "tags": ["wall", "tunnel", "terrain", "labyrinth"],
+    "description": "Земля + пространство — стена, туннель, изменение ландшафта, лабиринт"
+  },
+  "earth+time": {
+    "multiplier": 1.1,
+    "tags": ["fossil", "geology", "sediment", "ancient"],
+    "description": "Земля + время — окаменелости, геология, осадочные слои, древность"
+  },
+  "earth+life": {
+    "multiplier": 1.3,
+    "tags": ["garden", "roots", "harvest", "compost"],
+    "description": "Земля + жизнь — сад, корни, урожай, компост"
+  },
+
+  "light+body": {
+    "multiplier": 1.3,
+    "tags": ["healing_light", "diagnosis_light", "tan", "vitamin"],
+    "description": "Свет + тело — исцеляющий свет, диагностика, загар, витамины"
+  },
+  "light+mind": {
+    "multiplier": 1.3,
+    "tags": ["enlightenment", "truth", "revelation", "focus"],
+    "description": "Свет + разум — просветление, истина, откровение, фокус"
+  },
+  "light+matter": {
+    "multiplier": 1.2,
+    "tags": ["bleaching", "photosynthesis_matter", "transparency", "reflection"],
+    "description": "Свет + материя — отбеливание, прозрачность, отражение"
+  },
+  "light+space": {
+    "multiplier": 1.2,
+    "tags": ["illumination", "lighthouse", "hologram", "reveal_hidden"],
+    "description": "Свет + пространство — освещение, маяк, голограмма, раскрытие скрытого"
+  },
+  "light+time": {
+    "multiplier": 1.1,
+    "tags": ["dawn", "sundial", "day_cycle", "nostalgia_light"],
+    "description": "Свет + время — рассвет, солнечные часы, цикл дня, ностальгия"
+  },
+  "light+life": {
+    "multiplier": 1.4,
+    "tags": ["photosynthesis", "blessing", "aura", "vitality"],
+    "description": "Свет + жизнь — фотосинтез, благословение, аура, жизненная сила"
+  },
+
+  "dark+body": {
+    "multiplier": 1.2,
+    "tags": ["plague", "necrosis", "numbness", "sleep"],
+    "description": "Тьма + тело — чума, некроз, онемение, глубокий сон"
+  },
+  "dark+mind": {
+    "multiplier": 1.3,
+    "tags": ["fear", "madness", "nightmare", "amnesia"],
+    "description": "Тьма + разум — страх, безумие, кошмары, амнезия"
+  },
+  "dark+matter": {
+    "multiplier": 1.2,
+    "tags": ["decay", "corrosion", "void_matter", "disintegration"],
+    "description": "Тьма + материя — распад, коррозия, пустотная материя, дезинтеграция"
+  },
+  "dark+space": {
+    "multiplier": 1.2,
+    "tags": ["shadow_realm", "pocket_dimension", "invisibility", "black_hole"],
+    "description": "Тьма + пространство — царство теней, карманное измерение, невидимость, чёрная дыра"
+  },
+  "dark+time": {
+    "multiplier": 1.1,
+    "tags": ["entropy", "aging", "forgotten", "eternal_night"],
+    "description": "Тьма + время — энтропия, старение, забвение, вечная ночь"
+  },
+  "dark+life": {
+    "multiplier": 1.3,
+    "tags": ["necromancy", "undead", "vampirism", "parasite"],
+    "description": "Тьма + жизнь — некромантия, нежить, вампиризм, паразитизм"
+  }
+}

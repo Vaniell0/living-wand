@@ -15,6 +15,7 @@ Controls:
 """
 
 import sys, os
+from pathlib import Path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 # Find system SDL2 with Wayland support (pip pygame-ce ships without it)
@@ -34,10 +35,16 @@ from wand.algebra import (
     SignalKind, Element, EdgeType,
     SYNERGY_PAIRS, CANCEL_PAIRS,
 )
-from wand.model import create_wand, WandTrainer, affinity_multiplier
 from wand.events import Event, EventType, Pole, NUM_POLES, Emotion
-from wand.ocr import SymbolCNN, train_symbol_cnn
+from wand.ocr import SymbolNet, AdaptiveOCR, train_symbol_net
 from wand.synth_data import generate_dataset, SYMBOL_NAMES, IMG_SIZE
+from wand.transformer import SpellFormer
+from wand.tokenizer import SpellTokenizer
+from wand.wand_adapter import WandAdapter, AffinityHexagon, WandAdapterTrainer
+from wand.crystal import CrystalRegistry
+from wand.effect import interpret_effect, EffectDescription
+from wand.tags import SemanticTag, TAG_BY_NAME
+from wand.grimoire import Grimoire
 
 # ═══ Constants ═══
 W, H = 1100, 700
@@ -152,33 +159,61 @@ class Game:
         self.font_big = pygame.font.SysFont("monospace", 18, bold=True)
         self.font_small = pygame.font.SysFont("monospace", 11)
 
-        # Wand
-        self.wand = create_wand(seed=42)
-        self.trainer = WandTrainer(self.wand, lr=5e-4)
+        # SpellFormer (shared magic knowledge)
+        self.spell_former = SpellFormer()
+        sf_path = os.path.join(os.path.dirname(__file__), "data", "spellformer.pt")
+        if os.path.exists(sf_path):
+            self.spell_former.load_state_dict(torch.load(sf_path, weights_only=True))
+            print("SpellFormer loaded.")
+        else:
+            print("SpellFormer: no model, using random init")
+        self.spell_former.eval()
+
+        # Wand (personal)
+        self.adapter = WandAdapter()
+        self.hexagon = AffinityHexagon()
+        self.trainer = WandAdapterTrainer(self.adapter, self.hexagon)
+        self.tokenizer = SpellTokenizer()
+        self.crystal = CrystalRegistry(threshold=500)
+
         self.pending_events: list[Event] = []
         self.cast_count = 0
         self.sleep_count = 0
 
-        # OCR — load cached or train
-        ocr_cache = os.path.join(os.path.dirname(__file__), "data", "ocr_model.pt")
+        # Grimoire
+        self.grimoire = Grimoire(os.path.join(os.path.dirname(__file__), "data", "grimoire.db"))
+
+        # Load saved state
+        self._load_state()
+
+        # OCR — SymbolNet (CoordConv + SE + multi-scale)
+        ocr_cache = os.path.join(os.path.dirname(__file__), "data", "ocr_symbolnet.pt")
         if os.path.exists(ocr_cache):
-            print("Loading OCR... ", end="", flush=True)
-            self.symbol_cnn = SymbolCNN()
-            self.symbol_cnn.load_state_dict(torch.load(ocr_cache, weights_only=True))
+            print("Loading SymbolNet... ", end="", flush=True)
+            base_cnn = SymbolNet()
+            base_cnn.load_state_dict(torch.load(ocr_cache, weights_only=True))
             print("done.")
         else:
-            print("Training OCR (first run)... ", end="", flush=True)
+            print("Training SymbolNet (first run)... ", end="", flush=True)
             images, labels = generate_dataset(n_per_class=400)
-            self.symbol_cnn, _ = train_symbol_cnn(images, labels, epochs=30)
+            base_cnn, _ = train_symbol_net(images, labels, epochs=30)
             os.makedirs(os.path.dirname(ocr_cache), exist_ok=True)
-            torch.save(self.symbol_cnn.state_dict(), ocr_cache)
-            print("done (cached for next time).")
+            torch.save(base_cnn.state_dict(), ocr_cache)
+            print("done (cached).")
+
+        # Wrap in adaptive OCR (learns from SpellFormer feedback)
+        self.ocr = AdaptiveOCR(base_cnn)
+        ocr_buffer_path = os.path.join(os.path.dirname(__file__), "data", "save", "ocr_buffer.pt")
+        self.ocr.load_buffer(ocr_buffer_path)
+        self.symbol_cnn = base_cnn  # keep reference for recognize_strokes compatibility
 
         # Drawing state
         self.strokes: list[list[tuple[int, int]]] = []  # list of stroke point lists
         self.current_stroke: list[tuple[int, int]] = []
         self.drawing = False
         self.circle_closed = True
+        self.draw_mode = "free"  # "free" or "line"
+        self.line_start: tuple[int, int] | None = None  # for line tool
 
         # Recognized symbols
         self.recognized: list[tuple[str, float, pygame.Rect]] = []
@@ -186,6 +221,7 @@ class Game:
         # Spell state
         self.spell_graph: SpellGraph | None = None
         self.last_effect: SpellEffect | None = None
+        self.last_effect_desc: EffectDescription | None = None
         self.last_cast_info: dict | None = None
         self.cast_flash = 0  # frames of flash animation
         self.particles: list[Particle] = []
@@ -225,19 +261,77 @@ class Game:
         return min(w, h) / max(w, h, 1)
 
     def _cluster_strokes(self) -> list[tuple[list, pygame.Rect]]:
-        """Each stroke = potential symbol. Noise class handles rejection."""
-        clusters = []
+        """Group overlapping strokes into rune clusters.
+
+        Strokes whose bounding boxes overlap (IoU > 0.3 or center distance < 80px)
+        are merged into one cluster = one multi-line rune.
+        """
+        # Build per-stroke bboxes
+        stroke_bboxes = []
         for stroke in self.strokes:
-            if len(stroke) < 3:
+            if len(stroke) < 2:
                 continue
             xs = [p[0] for p in stroke]
             ys = [p[1] for p in stroke]
             w = max(xs) - min(xs)
             h = max(ys) - min(ys)
             if w < 5 and h < 5:
-                continue  # skip accidental dots only
+                continue
             bbox = pygame.Rect(min(xs) - 5, min(ys) - 5, max(w, 10) + 10, max(h, 10) + 10)
-            clusters.append(([stroke], bbox))
+            stroke_bboxes.append((stroke, bbox))
+
+        if not stroke_bboxes:
+            return []
+
+        # Union-find clustering by spatial proximity
+        n = len(stroke_bboxes)
+        parent = list(range(n))
+
+        def find(x):
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+
+        def union(a, b):
+            a, b = find(a), find(b)
+            if a != b:
+                parent[b] = a
+
+        for i in range(n):
+            for j in range(i + 1, n):
+                _, bi = stroke_bboxes[i]
+                _, bj = stroke_bboxes[j]
+                # Center distance
+                dist = math.hypot(bi.centerx - bj.centerx, bi.centery - bj.centery)
+                # Bbox overlap (IoU-like)
+                overlap = bi.clip(bj)
+                overlap_area = max(0, overlap.w) * max(0, overlap.h)
+                min_area = min(bi.w * bi.h, bj.w * bj.h)
+                iou = overlap_area / max(min_area, 1)
+
+                if dist < 80 or iou > 0.3:
+                    union(i, j)
+
+        # Group by root
+        groups: dict[int, list[int]] = {}
+        for i in range(n):
+            root = find(i)
+            groups.setdefault(root, []).append(i)
+
+        # Build clusters
+        clusters = []
+        for indices in groups.values():
+            strokes_in_cluster = [stroke_bboxes[i][0] for i in indices]
+            # Merged bbox
+            all_xs = [p[0] for i in indices for p in stroke_bboxes[i][0]]
+            all_ys = [p[1] for i in indices for p in stroke_bboxes[i][0]]
+            merged_bbox = pygame.Rect(
+                min(all_xs) - 5, min(all_ys) - 5,
+                max(all_xs) - min(all_xs) + 10,
+                max(all_ys) - min(all_ys) + 10,
+            )
+            clusters.append((strokes_in_cluster, merged_bbox))
         return clusters
 
     def _render_to_image(self, strokes, bbox: pygame.Rect) -> np.ndarray:
@@ -275,19 +369,40 @@ class Game:
 
         graph = SpellGraph(circle_closed=self.circle_closed)
         nodes = []
+        SYMBOL_INFO = {
+            "fire": (SignalKind.FORCE, Element.FIRE),
+            "water": (SignalKind.FORCE, Element.WATER),
+            "air": (SignalKind.FORCE, Element.AIR),
+            "earth": (SignalKind.FORCE, Element.EARTH),
+            "light": (SignalKind.FORCE, Element.LIGHT),
+            "dark": (SignalKind.FORCE, Element.DARK),
+            "body": (SignalKind.DOMAIN, None),
+            "mind": (SignalKind.DOMAIN, None),
+            "matter": (SignalKind.DOMAIN, None),
+            "space": (SignalKind.DOMAIN, None),
+            "time": (SignalKind.DOMAIN, None),
+            "life": (SignalKind.DOMAIN, None),
+            "inward": (SignalKind.VECTOR, None),
+            "outward": (SignalKind.VECTOR, None),
+            "up": (SignalKind.VECTOR, None),
+            "down": (SignalKind.VECTOR, None),
+            "through": (SignalKind.VECTOR, None),
+            "reverse": (SignalKind.VECTOR, None),
+            "point": (SignalKind.SCALAR, None),
+            "flow": (SignalKind.SCALAR, None),
+            "wave": (SignalKind.SCALAR, None),
+            "all": (SignalKind.SCALAR, None),
+            "amplify": (SignalKind.MODIFIER, None),
+            "weaken": (SignalKind.MODIFIER, None),
+            "hold": (SignalKind.MODIFIER, None),
+            "dispel": (SignalKind.MODIFIER, None),
+            "here": (SignalKind.REFERENCE, None),
+            "there": (SignalKind.REFERENCE, None),
+            "self": (SignalKind.REFERENCE, None),
+            "target": (SignalKind.REFERENCE, None),
+        }
         for name, conf, bbox in self.recognized:
-            sym_info = {
-                "fire": (SignalKind.FORCE, Element.FIRE),
-                "water": (SignalKind.FORCE, Element.WATER),
-                "air": (SignalKind.FORCE, Element.AIR),
-                "earth": (SignalKind.FORCE, Element.EARTH),
-                "light": (SignalKind.FORCE, Element.LIGHT),
-                "dark": (SignalKind.FORCE, Element.DARK),
-                "life": (SignalKind.DOMAIN, None),
-                "mind": (SignalKind.DOMAIN, None),
-                "space": (SignalKind.DOMAIN, None),
-                "time": (SignalKind.DOMAIN, None),
-            }.get(name, (SignalKind.DOMAIN, None))
+            sym_info = SYMBOL_INFO.get(name, (SignalKind.DOMAIN, None))
 
             nid = graph.add_node(name, sym_info[0], sym_info[1])
             nodes.append((nid, bbox))
@@ -314,7 +429,7 @@ class Game:
         return graph
 
     def cast(self):
-        """Execute a spell cast."""
+        """Execute a spell cast through SpellFormer."""
         self.recognize_strokes()
         graph = self.build_spell()
         if graph is None or not graph.nodes:
@@ -322,56 +437,104 @@ class Game:
             return
 
         self.spell_graph = graph
+
+        # Algebra evaluation (for particles + comparison)
         effect = evaluate_spell(graph)
         self.last_effect = effect
 
-        # Wand modifier
-        profile = self.wand.affinity_profile().numpy()
-        wand_dominant = int(np.argmax(profile))
+        # --- SpellFormer inference ---
+        tokens = self.tokenizer.tokenize(graph)
+        ids = torch.tensor([tokens.token_ids])
+        roles = torch.tensor([tokens.role_ids])
+        degs = torch.tensor([tokens.degree])
 
-        spell_poles = [0.0] * NUM_POLES
-        for elem in effect.force_power:
-            spell_poles[Pole.ELEMENT] += abs(effect.force_power[elem])
-        domain_map = {"body": Pole.BIOLOGY, "life": Pole.BIOLOGY,
-                      "mind": Pole.MENTAL, "matter": Pole.TRANSFORM,
-                      "space": Pole.SPACE, "time": Pole.TIME}
-        for domain in effect.domain_power:
-            p = domain_map.get(domain, Pole.ELEMENT)
-            spell_poles[p] += abs(effect.domain_power[domain])
-        total_sp = sum(spell_poles)
-        if total_sp > 0:
-            spell_poles = [v / total_sp for v in spell_poles]
-        alignment = sum(p * s for p, s in zip(profile, spell_poles))
-        multiplier = 0.5 + alignment
-        final_power = effect.total_power * multiplier
+        with torch.no_grad():
+            output = self.spell_former(ids, roles, degs)
+            base_raw = output["raw"]
+            spell_poles = output["pole_distribution"]
+
+            modified = self.adapter(base_raw, spell_poles)
+
+            poles = torch.softmax(modified[:, :6], dim=-1)[0].numpy()
+            power = torch.sigmoid(modified[:, 6:7])[0, 0].item()
+            stability = torch.sigmoid(modified[:, 7:8])[0, 0].item()
+            area = torch.nn.functional.softplus(modified[:, 8:9])[0, 0].item()
+            duration = torch.nn.functional.softplus(modified[:, 9:10])[0, 0].item()
+            elem_int = torch.sigmoid(modified[:, 10:16])[0].numpy()
+            dom_int = torch.sigmoid(modified[:, 16:22])[0].numpy()
+            sem_emb = torch.tanh(modified[:, 22:38])[0].numpy()
+
+        # OCR clarity modifier
+        if self.recognized:
+            clarity = np.mean([conf for _, conf, _ in self.recognized])
+            power *= clarity
+            stability *= 0.5 + 0.5 * clarity
+
+        desc = interpret_effect(poles, power, stability, area, duration, elem_int, dom_int, sem_emb)
+        self.last_effect_desc = desc
+
+        # OCR feedback from SpellFormer — magic teaches OCR what was drawn
+        if self.recognized:
+            ocr_images = []
+            ocr_preds = []
+            for cluster_strokes, bbox in self._cluster_strokes():
+                img = self._render_to_image(cluster_strokes, bbox)
+                ocr_images.append(img)
+            ocr_preds = [name for name, _, _ in self.recognized]
+            if len(ocr_images) == len(ocr_preds):
+                self.ocr.feedback_from_spell(
+                    ocr_images, ocr_preds,
+                    {"element_intensity": elem_int, "domain_intensity": dom_int}
+                )
+
+        # Crystallization
+        canon, crystallized = self.crystal.record_cast(tokens)
+        if crystallized:
+            with torch.no_grad():
+                h = self.spell_former.encode(ids, roles, degs)
+                pooled = self.spell_former.pool(h, ids)
+                self.crystal.set_crystal_embedding(canon, pooled[0])
+                entry = self.crystal.get_crystal_by_hash(canon)
+                if entry:
+                    self.spell_former.set_crystal_embedding(entry.crystal_id, pooled[0])
+            self.add_log(f"** CRYSTAL: {entry.name} **")
+            # Golden crystal burst
+            ccx = CANVAS_X + CANVAS_W // 2
+            ccy = CANVAS_Y + CANVAS_H // 2
+            for _ in range(60):
+                angle = random.uniform(0, 2 * math.pi)
+                speed = random.uniform(1, 5)
+                self.particles.append(Particle(
+                    ccx, ccy, (255, 220, 60),
+                    math.cos(angle) * speed, math.sin(angle) * speed,
+                    random.uniform(1.0, 2.5), gravity=0, size=5,
+                    behavior=random.choice(["orbit", "scatter", "rise"])))
 
         self.last_cast_info = {
             "symbols": [graph.nodes[i].name for i in sorted(graph.nodes)],
-            "power": final_power,
-            "multiplier": multiplier,
+            "power": power,
+            "multiplier": 1.0,
             "effect": effect,
+            "desc": desc,
         }
 
         # Log
         syms = " + ".join(self.last_cast_info["symbols"])
         self.add_log(f"cast: {syms}")
-        for s in effect.synergies:
-            self.add_log(f"  ✦ {s}")
-        for c in effect.cancellations:
-            self.add_log(f"  ✗ {c}")
-        if effect.tags:
-            self.add_log(f"  [{', '.join(sorted(effect.tags))}]")
-        self.add_log(f"  power={final_power:.2f} (wand ×{multiplier:.2f})")
+        self.add_log(f"  {desc.title}")
+        if desc.tags:
+            self.add_log(f"  [{', '.join(t for t, _ in desc.tags[:3])}]")
+        self.add_log(f"  power={power:.2f} ({desc.power_word})")
 
-        # Spawn particles
-        self._spawn_cast_particles(effect)
+        # Spawn particles (use both algebra effect + SpellFormer desc)
+        self._spawn_cast_particles(effect, desc)
 
-        # Create experience events
-        pole_aff = spell_poles
-        weight = 0.1 + 0.3 * min(final_power, 3.0) / 3.0
+        # Experience events
+        pole_aff = poles.tolist()
+        weight = 0.1 + 0.3 * min(power * 3, 1.0)
         self.pending_events.append(Event(
             EventType.ACTION, pole_aff,
-            Emotion(min(final_power / 3, 0.9), weight, 0.5),
+            Emotion(min(power, 0.9), weight, 0.5),
             weight,
         ))
 
@@ -379,7 +542,22 @@ class Game:
         self.cast_flash = 30
         self.history.append(self.last_cast_info)
 
-    def _spawn_cast_particles(self, effect: SpellEffect):
+        # Record in grimoire
+        rune_names = [graph.nodes[i].name for i in sorted(graph.nodes)]
+        edge_triples = [(graph.nodes[e.from_id].name, e.edge_type.name, graph.nodes[e.to_id].name)
+                        for e in graph.edges]
+        self.grimoire.record_cast(
+            runes=rune_names,
+            edges=edge_triples,
+            circle_closed=graph.circle_closed,
+            power=power,
+            stability=stability,
+            title=desc.title,
+            tags=[t for t, _ in desc.tags[:3]],
+            crystal_hash=canon if crystallized else None,
+        )
+
+    def _spawn_cast_particles(self, effect: SpellEffect, desc: EffectDescription | None = None):
         cx = CANVAS_X + CANVAS_W // 2
         cy = CANVAS_Y + CANVAS_H // 2
         power = effect.total_power
@@ -535,14 +713,151 @@ class Game:
                     (200, 50, 50), random.gauss(0, 2), random.gauss(0, 2),
                     random.uniform(0.2, 0.5), size=2, behavior="scatter"))
 
+        # --- SpellFormer-driven layers (semantic aura + tag overlays) ---
+        if desc is not None:
+            self._spawn_desc_layers(desc, cx, cy)
+
         # --- Fallback if nothing generated ---
         if not self.particles:
+            color = desc.dominant_color if desc is not None else DIM_TEXT
             for _ in range(10):
                 angle = random.uniform(0, 2 * math.pi)
                 self.particles.append(Particle(
-                    cx, cy, DIM_TEXT,
+                    cx, cy, color,
                     math.cos(angle), math.sin(angle),
                     0.3, size=2, behavior="default"))
+
+    def _spawn_desc_layers(self, desc: EffectDescription, cx: int, cy: int):
+        """Layer particles driven by SpellFormer interpretation.
+
+        Adds a semantic aura ring in dominant_color, palette-weighted clouds,
+        and per-tag-domain overlays so domains/tags read visually, not just
+        elements.
+        """
+        power = max(0.05, desc.power)
+        lifetime = max(0.4, desc.particle_lifetime)
+
+        # 1. Aura ring — always; tints whole cast in the blended dominant.
+        aura_n = int(8 + power * 18)
+        for _ in range(aura_n):
+            angle = random.uniform(0, 2 * math.pi)
+            r = random.uniform(20, 60)
+            self.particles.append(Particle(
+                cx + r * math.cos(angle), cy + r * math.sin(angle),
+                desc.dominant_color,
+                math.cos(angle) * random.uniform(0.3, 1.2),
+                math.sin(angle) * random.uniform(0.3, 1.2),
+                random.uniform(0.5, 1.0) * lifetime,
+                gravity=0, size=3, behavior="orbit"))
+
+        # 2. Palette clouds — each weighted source contributes a small puff.
+        total_w = sum(w for _, w in desc.palette) or 1.0
+        for color, weight in desc.palette:
+            n = int(4 + (weight / total_w) * 18 * power)
+            if n <= 0:
+                continue
+            for _ in range(n):
+                self.particles.append(Particle(
+                    cx + random.gauss(0, 35), cy + random.gauss(0, 35),
+                    color,
+                    random.gauss(0, 0.6), random.gauss(0, 0.6),
+                    random.uniform(0.4, 0.9) * lifetime,
+                    gravity=0.02, size=3, behavior="default"))
+
+        # 3. Tag-domain overlays — top tag drives a signature flourish.
+        if desc.tags:
+            top_name, top_sim = desc.tags[0]
+            tag_obj = TAG_BY_NAME.get(top_name)
+            if tag_obj is not None and top_sim > 0.3:
+                self._spawn_tag_overlay(tag_obj, top_sim, desc.aura_color, cx, cy, lifetime)
+
+    def _spawn_tag_overlay(self, tag: SemanticTag, sim: float,
+                            aura: tuple[int, int, int],
+                            cx: int, cy: int, lifetime: float):
+        """Per-tag-domain visual flourish."""
+        n = int(8 + sim * 14)
+
+        if tag.domain == "biology":
+            # Healing/blessing — gentle upward sparkles, golden-green
+            for _ in range(n):
+                self.particles.append(Particle(
+                    cx + random.gauss(0, 30), cy + random.uniform(0, 40),
+                    aura,
+                    random.gauss(0, 0.3), random.uniform(-1.5, -0.5),
+                    random.uniform(0.8, 1.5) * lifetime,
+                    gravity=-0.02, size=4, behavior="rise"))
+
+        elif tag.domain == "mental":
+            # Mind — slow swirling violet motes
+            for _ in range(n):
+                angle = random.uniform(0, 2 * math.pi)
+                r = random.uniform(15, 45)
+                self.particles.append(Particle(
+                    cx + r * math.cos(angle), cy + r * math.sin(angle),
+                    aura, 0, 0,
+                    random.uniform(0.7, 1.4) * lifetime,
+                    gravity=0, size=2, behavior="orbit"))
+
+        elif tag.domain == "combo" or tag.domain == "cross":
+            # Hybrid — dual-color burst (aura + secondary palette color)
+            secondary = aura
+            d = self.last_effect_desc
+            if d is not None and len(d.palette) > 1:
+                secondary = d.palette[1][0]
+            for _ in range(n):
+                angle = random.uniform(0, 2 * math.pi)
+                speed = random.uniform(1.5, 4)
+                color = aura if random.random() < 0.5 else secondary
+                self.particles.append(Particle(
+                    cx, cy, color,
+                    math.cos(angle) * speed, math.sin(angle) * speed,
+                    random.uniform(0.5, 1.0) * lifetime,
+                    gravity=0, size=4, behavior="orbit"))
+
+        elif tag.domain == "time":
+            # Time — slow rewinding scatter
+            for _ in range(n):
+                self.particles.append(Particle(
+                    cx + random.gauss(0, 20), cy + random.gauss(0, 20),
+                    aura,
+                    random.gauss(0, 0.4), random.gauss(0, 0.4),
+                    random.uniform(1.0, 2.0) * lifetime,
+                    gravity=0, size=2, behavior="pulse"))
+
+        elif tag.domain == "space":
+            # Space — converging implode
+            for _ in range(n):
+                angle = random.uniform(0, 2 * math.pi)
+                r = random.uniform(50, 90)
+                self.particles.append(Particle(
+                    cx + r * math.cos(angle), cy + r * math.sin(angle),
+                    aura, 0, 0,
+                    random.uniform(0.6, 1.0) * lifetime,
+                    gravity=0, size=3, behavior="implode"))
+
+        elif tag.domain == "transform":
+            # Transform — color-shifting scatter
+            for _ in range(n):
+                self.particles.append(Particle(
+                    cx + random.gauss(0, 20), cy + random.gauss(0, 20),
+                    aura,
+                    random.gauss(0, 0.7), random.gauss(0, 0.7),
+                    random.uniform(0.5, 1.0) * lifetime,
+                    gravity=0, size=3, behavior="scatter"))
+
+        elif tag.domain == "combat":
+            # Combat — sharp outward shards
+            for _ in range(n):
+                angle = random.uniform(0, 2 * math.pi)
+                speed = random.uniform(3, 6)
+                self.particles.append(Particle(
+                    cx, cy, aura,
+                    math.cos(angle) * speed, math.sin(angle) * speed,
+                    random.uniform(0.3, 0.6) * lifetime,
+                    gravity=0, size=3, behavior="default"))
+
+        # Other domains (household/cooking/crafting/nature/...) — palette
+        # clouds already cover them, no extra flourish needed.
 
     def add_life_event(self, key):
         if key not in LIFE_EVENTS:
@@ -557,10 +872,38 @@ class Game:
             self.add_log("nothing to dream about")
             return
         n = len(self.pending_events)
-        self.trainer.train_biography(self.pending_events, epochs=3, batch_size=max(n, 8))
+        dummy = torch.zeros(1, self.adapter.effect_dim)
+        self.trainer.train_events(self.pending_events, dummy)
         self.sleep_count += 1
         self.pending_events = []
         self.add_log(f"...dreamed of {n} moments...")
+
+    def _save_state(self):
+        """Save wand adapter, hexagon, crystals, and OCR buffer to disk."""
+        save_dir = os.path.join(os.path.dirname(__file__), "data", "save")
+        os.makedirs(save_dir, exist_ok=True)
+        torch.save(self.adapter.state_dict(), os.path.join(save_dir, "adapter.pt"))
+        self.hexagon.save(os.path.join(save_dir, "hexagon.json"))
+        self.crystal.save_dir = Path(os.path.join(save_dir, "crystals"))
+        self.crystal.save()
+        # Save adapted OCR state + replay buffer
+        torch.save(self.symbol_cnn.state_dict(), os.path.join(save_dir, "ocr_adapted.pt"))
+        self.ocr.save_buffer(os.path.join(save_dir, "ocr_buffer.pt"))
+
+    def _load_state(self):
+        """Load saved state if exists."""
+        save_dir = os.path.join(os.path.dirname(__file__), "data", "save")
+        adapter_path = os.path.join(save_dir, "adapter.pt")
+        if os.path.exists(adapter_path):
+            self.adapter.load_state_dict(torch.load(adapter_path, weights_only=True))
+            print("Wand adapter loaded.")
+        hex_path = os.path.join(save_dir, "hexagon.json")
+        self.hexagon.load(hex_path)
+        crystal_dir = os.path.join(save_dir, "crystals")
+        self.crystal.save_dir = Path(crystal_dir)
+        self.crystal.load()
+        # Restore cast count from grimoire
+        self.cast_count = self.grimoire.total_casts()
 
     def clear_canvas(self):
         self.strokes = []
@@ -612,6 +955,12 @@ class Game:
         if len(self.current_stroke) >= 2:
             pygame.draw.lines(self.screen, STROKE_COLOR, False, self.current_stroke, 3)
 
+        # Line tool preview
+        if self.line_start is not None:
+            mx, my = pygame.mouse.get_pos()
+            pygame.draw.circle(self.screen, (100, 200, 100), self.line_start, 4)
+            pygame.draw.line(self.screen, (80, 160, 80), self.line_start, (mx, my), 1)
+
         # Draw recognized symbol labels
         for name, conf, bbox in self.recognized:
             # Bbox outline
@@ -634,7 +983,7 @@ class Game:
         y += 30
 
         # Wand profile (always visible, compact)
-        profile = self.wand.affinity_profile().numpy()
+        profile = self.adapter.affinity_profile().numpy()
         dominant = Pole(np.argmax(profile))
 
         # Hexagon visualization
@@ -677,42 +1026,98 @@ class Game:
             f"casts: {self.cast_count}  sleeps: {self.sleep_count}  "
             f"pending: {len(self.pending_events)}", True, DIM_TEXT)
         self.screen.blit(stats, (PANEL_X, y))
-        y += 20
+        y += 16
+
+        # XP per pole (compact bars)
+        hex_levels = self.hexagon.levels()
+        hex_profile = self.hexagon.profile()
+        for i, pole in enumerate(Pole):
+            lv = hex_levels[i]
+            xp_frac = hex_profile[i]
+            bar_w = int(xp_frac * 100)
+            c = POLE_COLORS[pole]
+            # Dim bar background
+            pygame.draw.rect(self.screen, (30, 28, 42), (PANEL_X, y, 100, 8))
+            if bar_w > 0:
+                pygame.draw.rect(self.screen, c, (PANEL_X, y, bar_w, 8))
+            lbl = self.font_small.render(f"{pole.name[:3]} lv{lv}", True, DIM_TEXT)
+            self.screen.blit(lbl, (PANEL_X + 105, y - 2))
+            y += 11
+        y += 4
+
+        # Crystal count
+        n_crystals = self.crystal.num_crystals
+        if n_crystals > 0:
+            cr_text = self.font_small.render(f"crystals: {n_crystals}", True, (255, 200, 60))
+            self.screen.blit(cr_text, (PANEL_X, y))
+            y += 14
 
         # Last cast info
         if self.last_cast_info:
             y += 5
-            line = self.font.render("last cast:", True, DIM_TEXT)
-            self.screen.blit(line, (PANEL_X, y))
-            y += 18
+            desc = self.last_cast_info.get("desc")
 
-            effect = self.last_cast_info["effect"]
-            # Force bars
-            for elem, power in sorted(effect.force_power.items(), key=lambda x: -x[1]):
-                bar_w = int(min(power / 3.0, 1.0) * 150)
-                elem_colors = {
-                    Element.FIRE: (232, 93, 58), Element.WATER: (33, 150, 243),
-                    Element.AIR: (144, 202, 249), Element.EARTH: (139, 105, 20),
-                    Element.LIGHT: (255, 236, 179), Element.DARK: (80, 50, 120),
+            # SpellFormer title
+            if desc:
+                title_text = self.font.render(desc.title[:35], True, ACCENT)
+                self.screen.blit(title_text, (PANEL_X, y))
+                y += 18
+                pw_text = self.font_small.render(
+                    f"{desc.power_word}  stab={desc.stability:.2f}", True, TEXT_COLOR)
+                self.screen.blit(pw_text, (PANEL_X, y))
+                y += 16
+
+                # Element intensity bars
+                elem_colors_map = {
+                    "fire": (232, 93, 58), "water": (33, 150, 243),
+                    "air": (144, 202, 249), "earth": (139, 105, 20),
+                    "light": (255, 236, 179), "dark": (80, 50, 120),
                 }
-                c = elem_colors.get(elem, ACCENT)
-                pygame.draw.rect(self.screen, c, (PANEL_X, y, bar_w, 12))
-                label = self.font_small.render(f"{elem.name} {power:.2f}", True, TEXT_COLOR)
-                self.screen.blit(label, (PANEL_X + bar_w + 5, y - 1))
-                y += 16
+                for name, intensity in desc.active_elements[:4]:
+                    bar_w = int(intensity * 150)
+                    c = elem_colors_map.get(name, ACCENT)
+                    pygame.draw.rect(self.screen, c, (PANEL_X, y, bar_w, 12))
+                    label = self.font_small.render(f"{name} {intensity:.2f}", True, TEXT_COLOR)
+                    self.screen.blit(label, (PANEL_X + bar_w + 5, y - 1))
+                    y += 16
 
-            for domain, power in sorted(effect.domain_power.items(), key=lambda x: -x[1]):
-                bar_w = int(min(power / 3.0, 1.0) * 150)
-                pygame.draw.rect(self.screen, (76, 175, 80), (PANEL_X, y, bar_w, 12))
-                label = self.font_small.render(f"{domain} {power:.2f}", True, TEXT_COLOR)
-                self.screen.blit(label, (PANEL_X + bar_w + 5, y - 1))
-                y += 16
+                for name, intensity in desc.active_domains[:3]:
+                    bar_w = int(intensity * 150)
+                    pygame.draw.rect(self.screen, (76, 175, 80), (PANEL_X, y, bar_w, 12))
+                    label = self.font_small.render(f"{name} {intensity:.2f}", True, TEXT_COLOR)
+                    self.screen.blit(label, (PANEL_X + bar_w + 5, y - 1))
+                    y += 16
+
+                # Tags
+                if desc.tags:
+                    tag_str = ", ".join(t for t, _ in desc.tags[:3])
+                    tag_text = self.font_small.render(tag_str[:40], True, DIM_TEXT)
+                    self.screen.blit(tag_text, (PANEL_X, y))
+                    y += 16
+            else:
+                line = self.font.render("last cast:", True, DIM_TEXT)
+                self.screen.blit(line, (PANEL_X, y))
+                y += 18
 
             pwr_text = self.font.render(
-                f"power: {self.last_cast_info['power']:.2f} "
-                f"(×{self.last_cast_info['multiplier']:.2f})", True, ACCENT)
+                f"power: {self.last_cast_info['power']:.2f}", True, ACCENT)
             self.screen.blit(pwr_text, (PANEL_X, y))
             y += 20
+
+            # Crystal progress bar
+            crystal_prog = self.crystal.approaching_crystal(
+                self.tokenizer.tokenize(self.spell_graph)
+            ) if self.spell_graph else 0
+            if crystal_prog > 0.02:
+                bar_w = int(crystal_prog * 120)
+                bar_color = (255, 200, 60) if crystal_prog < 1.0 else (255, 255, 100)
+                pygame.draw.rect(self.screen, (30, 28, 42), (PANEL_X, y, 120, 8))
+                pygame.draw.rect(self.screen, bar_color, (PANEL_X, y, bar_w, 8))
+                label = self.font_small.render(
+                    f"crystal {crystal_prog:.0%}" if crystal_prog < 1.0 else "CRYSTALLIZED",
+                    True, bar_color)
+                self.screen.blit(label, (PANEL_X + 125, y - 2))
+                y += 14
 
         # Log
         y = max(y + 10, H - 220)
@@ -730,7 +1135,7 @@ class Game:
             y += 14
 
         # Bottom hints
-        hints = "LMB: draw | RMB: cast | Space: clear | 1-6: life events | S: sleep | C: circle | Tab: profile"
+        hints = "draw | Shift+click: line | Ctrl+click: circle | RMB: cast | Space: clear | S: sleep | C: circle"
         hint_text = self.font_small.render(hints, True, (50, 48, 70))
         self.screen.blit(hint_text, (20, H - 20))
 
@@ -763,10 +1168,43 @@ class Game:
                         mx, my = event.pos
                         canvas_rect = pygame.Rect(CANVAS_X, CANVAS_Y, CANVAS_W, CANVAS_H)
                         if canvas_rect.collidepoint(mx, my):
-                            self.drawing = True
-                            self.current_stroke = [(mx, my)]
+                            mods = pygame.key.get_mods()
+                            if mods & pygame.KMOD_SHIFT:
+                                # Shift+click = line tool
+                                if self.line_start is None:
+                                    self.line_start = (mx, my)
+                                else:
+                                    # Draw straight line between two points
+                                    x0, y0 = self.line_start
+                                    steps = max(abs(mx - x0), abs(my - y0), 1)
+                                    line_stroke = [(int(x0 + (mx - x0) * t / steps),
+                                                    int(y0 + (my - y0) * t / steps))
+                                                   for t in range(steps + 1)]
+                                    self.strokes.append(line_stroke)
+                                    self.line_start = (mx, my)  # chain lines
+                            elif mods & pygame.KMOD_CTRL:
+                                # Ctrl+click = circle tool (draw arc from center)
+                                if self.line_start is None:
+                                    self.line_start = (mx, my)
+                                else:
+                                    cx, cy = self.line_start
+                                    r = int(math.hypot(mx - cx, my - cy))
+                                    arc_stroke = [(int(cx + r * math.cos(a * math.pi / 180)),
+                                                   int(cy + r * math.sin(a * math.pi / 180)))
+                                                  for a in range(0, 361, 5)]
+                                    self.strokes.append(arc_stroke)
+                                    self.line_start = None
+                            else:
+                                # Free draw
+                                self.line_start = None
+                                self.drawing = True
+                                self.current_stroke = [(mx, my)]
                     elif event.button == 3:  # Right click — cast
+                        self.line_start = None
                         self.cast()
+                    elif event.button == 2:  # Middle click — clear
+                        self.clear_canvas()
+                        self.line_start = None
 
                 elif event.type == pygame.MOUSEMOTION:
                     if self.drawing:
@@ -778,13 +1216,16 @@ class Game:
                 elif event.type == pygame.MOUSEBUTTONUP:
                     if event.button == 1 and self.drawing:
                         self.drawing = False
-                        if len(self.current_stroke) >= 3:
+                        if len(self.current_stroke) >= 2:
                             self.strokes.append(self.current_stroke)
                         self.current_stroke = []
 
             self.draw_ui()
             self.clock.tick(60)
 
+        # Save state on exit
+        self._save_state()
+        self.grimoire.close()
         pygame.quit()
 
 

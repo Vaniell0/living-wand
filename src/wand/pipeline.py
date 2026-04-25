@@ -8,7 +8,7 @@ import numpy as np
 import torch
 
 from .spells import Spell, Primitive, Connection, Operator, PRIMITIVE_BY_NAME, SPELL_DIM
-from .ocr import SymbolCNN, CircleDetector
+from .ocr import SymbolNet, CircleDetector
 from .checker import check_spell, CheckResult, Verdict
 from .model import WandCore, affinity_multiplier
 from .events import Pole, NUM_POLES
@@ -84,7 +84,7 @@ EFFECT_TEMPLATES = {
 class CastingPipeline:
     """Connects OCR → Checker → Wand into a single casting flow."""
 
-    def __init__(self, symbol_cnn: SymbolCNN, circle_detector: CircleDetector, wand: WandCore):
+    def __init__(self, symbol_cnn: SymbolNet, circle_detector: CircleDetector, wand: WandCore):
         self.symbol_cnn = symbol_cnn
         self.circle_detector = circle_detector
         self.wand = wand

@@ -1,4 +1,11 @@
 __pycache__/
 *.pyc
 .venv/
-data/ocr_model.pt
+
+# Trained models and runtime artifacts
+data/*.pt
+data/grimoire.db
+data/save/
+
+# Experiment outputs
+experiments/*.png

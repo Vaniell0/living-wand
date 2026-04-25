@@ -1,0 +1,392 @@
+{
+  "_doc": "Named spell recipes — common everyday and combat spells built from the algebra. These serve as (1) preset examples for testing, (2) documentation of what the system can express, (3) seed data for datagen. Each recipe is a full graph description.",
+
+  "everyday": {
+    "candle": {
+      "nodes": [
+        {"name": "fire", "kind": "FORCE", "element": "FIRE"},
+        {"name": "point", "kind": "SCALAR"},
+        {"name": "hold", "kind": "MODIFIER"},
+        {"name": "here", "kind": "REFERENCE"}
+      ],
+      "edges": [
+        ["point", "fire", "DIRECT"],
+        ["hold", "fire", "DIRECT"],
+        ["fire", "here", "DIRECT"]
+      ],
+      "circle_closed": true,
+      "expected_tags": ["lighting", "warming", "focused", "sustained"],
+      "description": "Свеча — точечный удерживаемый огонь рядом"
+    },
+    "campfire": {
+      "nodes": [
+        {"name": "fire", "kind": "FORCE", "element": "FIRE"},
+        {"name": "earth", "kind": "FORCE", "element": "EARTH"},
+        {"name": "flow", "kind": "SCALAR"},
+        {"name": "here", "kind": "REFERENCE"}
+      ],
+      "edges": [
+        ["fire", "earth", "DIRECT"],
+        ["flow", "fire", "DIRECT"],
+        ["fire", "here", "DIRECT"]
+      ],
+      "circle_closed": true,
+      "expected_tags": ["warming", "lighting", "cooking", "heating"],
+      "description": "Костёр — огонь на земле, поток, рядом"
+    },
+    "clean_water": {
+      "nodes": [
+        {"name": "water", "kind": "FORCE", "element": "WATER"},
+        {"name": "light", "kind": "FORCE", "element": "LIGHT"},
+        {"name": "point", "kind": "SCALAR"},
+        {"name": "here", "kind": "REFERENCE"}
+      ],
+      "edges": [
+        ["light", "water", "MUTUAL"],
+        ["point", "water", "DIRECT"],
+        ["water", "here", "DIRECT"]
+      ],
+      "circle_closed": true,
+      "expected_tags": ["cleaning", "purification", "clarity"],
+      "description": "Чистая вода — свет очищает воду, точечно, рядом"
+    },
+    "lantern": {
+      "nodes": [
+        {"name": "light", "kind": "FORCE", "element": "LIGHT"},
+        {"name": "hold", "kind": "MODIFIER"},
+        {"name": "here", "kind": "REFERENCE"}
+      ],
+      "edges": [
+        ["hold", "light", "DIRECT"],
+        ["light", "here", "DIRECT"]
+      ],
+      "circle_closed": true,
+      "expected_tags": ["lighting", "sustained"],
+      "description": "Фонарь — удерживаемый свет рядом"
+    },
+    "umbrella": {
+      "nodes": [
+        {"name": "air", "kind": "FORCE", "element": "AIR"},
+        {"name": "up", "kind": "VECTOR"},
+        {"name": "self", "kind": "REFERENCE"},
+        {"name": "hold", "kind": "MODIFIER"}
+      ],
+      "edges": [
+        ["up", "air", "DIRECT"],
+        ["hold", "air", "DIRECT"],
+        ["air", "self", "DIRECT"]
+      ],
+      "circle_closed": true,
+      "expected_tags": ["shelter", "defense", "sustained"],
+      "description": "Зонт — воздух вверх, удерживаемый, на себя"
+    },
+    "garden_grow": {
+      "nodes": [
+        {"name": "water", "kind": "FORCE", "element": "WATER"},
+        {"name": "earth", "kind": "FORCE", "element": "EARTH"},
+        {"name": "life", "kind": "DOMAIN"},
+        {"name": "here", "kind": "REFERENCE"}
+      ],
+      "edges": [
+        ["water", "earth", "MUTUAL"],
+        ["earth", "life", "MUTUAL"],
+        ["life", "here", "DIRECT"]
+      ],
+      "circle_closed": true,
+      "expected_tags": ["growing", "garden", "fertility", "nurture"],
+      "description": "Рост сада — вода+земля питают жизнь"
+    },
+    "compass": {
+      "nodes": [
+        {"name": "earth", "kind": "FORCE", "element": "EARTH"},
+        {"name": "space", "kind": "DOMAIN"},
+        {"name": "point", "kind": "SCALAR"},
+        {"name": "self", "kind": "REFERENCE"}
+      ],
+      "edges": [
+        ["earth", "space", "DIRECT"],
+        ["point", "space", "DIRECT"],
+        ["space", "self", "DIRECT"]
+      ],
+      "circle_closed": true,
+      "expected_tags": ["compass", "pathfinding", "focused"],
+      "description": "Компас — земля + пространство, точечно, на себя"
+    },
+    "warm_bed": {
+      "nodes": [
+        {"name": "fire", "kind": "FORCE", "element": "FIRE"},
+        {"name": "body", "kind": "DOMAIN"},
+        {"name": "hold", "kind": "MODIFIER"},
+        {"name": "self", "kind": "REFERENCE"},
+        {"name": "weaken", "kind": "MODIFIER"}
+      ],
+      "edges": [
+        ["weaken", "fire", "DIRECT"],
+        ["fire", "body", "DIRECT"],
+        ["hold", "body", "DIRECT"],
+        ["body", "self", "DIRECT"]
+      ],
+      "circle_closed": true,
+      "expected_tags": ["warming", "rest", "warming_body"],
+      "description": "Тёплая постель — слабый огонь + тело + удержание + на себя"
+    },
+    "pest_ward": {
+      "nodes": [
+        {"name": "air", "kind": "FORCE", "element": "AIR"},
+        {"name": "life", "kind": "DOMAIN"},
+        {"name": "outward", "kind": "VECTOR"},
+        {"name": "wave", "kind": "SCALAR"},
+        {"name": "here", "kind": "REFERENCE"}
+      ],
+      "edges": [
+        ["air", "life", "DIRECT"],
+        ["outward", "air", "DIRECT"],
+        ["wave", "air", "DIRECT"],
+        ["air", "here", "DIRECT"]
+      ],
+      "circle_closed": true,
+      "expected_tags": ["pest_control", "seed_spread", "fresh_air"],
+      "description": "Отпугивание вредителей — воздух + жизнь наружу волной"
+    },
+    "mirror": {
+      "nodes": [
+        {"name": "light", "kind": "FORCE", "element": "LIGHT"},
+        {"name": "matter", "kind": "DOMAIN"},
+        {"name": "here", "kind": "REFERENCE"}
+      ],
+      "edges": [
+        ["light", "matter", "MUTUAL"],
+        ["matter", "here", "DIRECT"]
+      ],
+      "circle_closed": true,
+      "expected_tags": ["reflection", "transparency", "clarity"],
+      "description": "Зеркало — свет + материя рядом"
+    },
+    "preserve_food": {
+      "nodes": [
+        {"name": "water", "kind": "FORCE", "element": "WATER"},
+        {"name": "time", "kind": "DOMAIN"},
+        {"name": "hold", "kind": "MODIFIER"},
+        {"name": "here", "kind": "REFERENCE"}
+      ],
+      "edges": [
+        ["water", "time", "DIRECT"],
+        ["hold", "time", "DIRECT"],
+        ["time", "here", "DIRECT"]
+      ],
+      "circle_closed": true,
+      "expected_tags": ["preserving", "freezing", "stasis"],
+      "description": "Консервация — вода замедляет время, удержание"
+    },
+    "message": {
+      "nodes": [
+        {"name": "air", "kind": "FORCE", "element": "AIR"},
+        {"name": "mind", "kind": "DOMAIN"},
+        {"name": "there", "kind": "REFERENCE"},
+        {"name": "outward", "kind": "VECTOR"}
+      ],
+      "edges": [
+        ["air", "mind", "MUTUAL"],
+        ["outward", "air", "DIRECT"],
+        ["air", "there", "DIRECT"]
+      ],
+      "circle_closed": true,
+      "expected_tags": ["whisper", "signaling", "telepathy_range"],
+      "description": "Сообщение — воздух + разум наружу на расстояние"
+    }
+  },
+
+  "combat": {
+    "fireball": {
+      "nodes": [
+        {"name": "fire", "kind": "FORCE", "element": "FIRE"},
+        {"name": "outward", "kind": "VECTOR"},
+        {"name": "target", "kind": "REFERENCE"}
+      ],
+      "edges": [
+        ["fire", "outward", "DIRECT"],
+        ["outward", "target", "DIRECT"]
+      ],
+      "circle_closed": true,
+      "expected_tags": ["burning", "attack", "ranged"],
+      "description": "Огненный шар"
+    },
+    "ice_lance": {
+      "nodes": [
+        {"name": "water", "kind": "FORCE", "element": "WATER"},
+        {"name": "earth", "kind": "FORCE", "element": "EARTH"},
+        {"name": "point", "kind": "SCALAR"},
+        {"name": "outward", "kind": "VECTOR"},
+        {"name": "target", "kind": "REFERENCE"}
+      ],
+      "edges": [
+        ["water", "earth", "MUTUAL"],
+        ["point", "water", "DIRECT"],
+        ["outward", "water", "DIRECT"],
+        ["water", "target", "DIRECT"]
+      ],
+      "circle_closed": true,
+      "expected_tags": ["freezing_elem", "attack", "focused"],
+      "description": "Ледяное копьё — вода+земля, точечное, направленное"
+    },
+    "stone_wall": {
+      "nodes": [
+        {"name": "earth", "kind": "FORCE", "element": "EARTH"},
+        {"name": "matter", "kind": "DOMAIN"},
+        {"name": "hold", "kind": "MODIFIER"},
+        {"name": "here", "kind": "REFERENCE"}
+      ],
+      "edges": [
+        ["earth", "matter", "MUTUAL"],
+        ["hold", "earth", "DIRECT"],
+        ["earth", "here", "DIRECT"]
+      ],
+      "circle_closed": true,
+      "expected_tags": ["wall", "barrier", "defense", "building"],
+      "description": "Каменная стена — земля+материя, удержание, рядом"
+    },
+    "lightning_bolt": {
+      "nodes": [
+        {"name": "air", "kind": "FORCE", "element": "AIR"},
+        {"name": "light", "kind": "FORCE", "element": "LIGHT"},
+        {"name": "amplify", "kind": "MODIFIER"},
+        {"name": "target", "kind": "REFERENCE"}
+      ],
+      "edges": [
+        ["air", "light", "MUTUAL"],
+        ["amplify", "air", "DIRECT"],
+        ["air", "target", "DIRECT"]
+      ],
+      "circle_closed": true,
+      "expected_tags": ["flash", "attack", "storm"],
+      "description": "Молния — воздух+свет усиленный на цель"
+    },
+    "fear_aura": {
+      "nodes": [
+        {"name": "dark", "kind": "FORCE", "element": "DARK"},
+        {"name": "mind", "kind": "DOMAIN"},
+        {"name": "wave", "kind": "SCALAR"},
+        {"name": "self", "kind": "REFERENCE"}
+      ],
+      "edges": [
+        ["dark", "mind", "MUTUAL"],
+        ["wave", "dark", "DIRECT"],
+        ["mind", "self", "DIRECT"]
+      ],
+      "circle_closed": true,
+      "expected_tags": ["fear", "darkness", "disruption"],
+      "description": "Аура страха — тьма+разум волной вокруг себя"
+    },
+    "poison_cloud": {
+      "nodes": [
+        {"name": "dark", "kind": "FORCE", "element": "DARK"},
+        {"name": "water", "kind": "FORCE", "element": "WATER"},
+        {"name": "air", "kind": "FORCE", "element": "AIR"},
+        {"name": "wave", "kind": "SCALAR"},
+        {"name": "there", "kind": "REFERENCE"}
+      ],
+      "edges": [
+        ["dark", "water", "MUTUAL"],
+        ["water", "air", "MUTUAL"],
+        ["wave", "dark", "DIRECT"],
+        ["dark", "there", "DIRECT"]
+      ],
+      "circle_closed": true,
+      "expected_tags": ["poison", "mist", "abyss"],
+      "description": "Ядовитое облако — тьма+вода+воздух волной на расстоянии"
+    },
+    "time_stop": {
+      "nodes": [
+        {"name": "time", "kind": "DOMAIN"},
+        {"name": "hold", "kind": "MODIFIER"},
+        {"name": "hold2", "kind": "MODIFIER"},
+        {"name": "wave", "kind": "SCALAR"},
+        {"name": "here", "kind": "REFERENCE"}
+      ],
+      "edges": [
+        ["hold", "time", "DIRECT"],
+        ["hold2", "time", "DIRECT"],
+        ["wave", "time", "DIRECT"],
+        ["time", "here", "DIRECT"]
+      ],
+      "circle_closed": true,
+      "expected_tags": ["stasis", "time_lock", "permanent"],
+      "description": "Остановка времени — двойное удержание на время, волной, рядом"
+    }
+  },
+
+  "crafting": {
+    "smelt_ore": {
+      "nodes": [
+        {"name": "fire", "kind": "FORCE", "element": "FIRE"},
+        {"name": "earth", "kind": "FORCE", "element": "EARTH"},
+        {"name": "matter", "kind": "DOMAIN"},
+        {"name": "amplify", "kind": "MODIFIER"},
+        {"name": "here", "kind": "REFERENCE"}
+      ],
+      "edges": [
+        ["fire", "earth", "MUTUAL"],
+        ["earth", "matter", "DIRECT"],
+        ["amplify", "fire", "DIRECT"],
+        ["matter", "here", "DIRECT"]
+      ],
+      "circle_closed": true,
+      "expected_tags": ["smelting", "forge", "hardening"],
+      "description": "Плавка руды — огонь+земля в материю, усиленный"
+    },
+    "glassmaking": {
+      "nodes": [
+        {"name": "fire", "kind": "FORCE", "element": "FIRE"},
+        {"name": "earth", "kind": "FORCE", "element": "EARTH"},
+        {"name": "light", "kind": "FORCE", "element": "LIGHT"},
+        {"name": "matter", "kind": "DOMAIN"},
+        {"name": "here", "kind": "REFERENCE"}
+      ],
+      "edges": [
+        ["fire", "earth", "MUTUAL"],
+        ["light", "earth", "MUTUAL"],
+        ["earth", "matter", "DIRECT"],
+        ["matter", "here", "DIRECT"]
+      ],
+      "circle_closed": true,
+      "expected_tags": ["crystal", "transparency", "shaping"],
+      "description": "Стеклоделие — огонь+земля+свет в материю"
+    },
+    "enchant_blade": {
+      "nodes": [
+        {"name": "fire", "kind": "FORCE", "element": "FIRE"},
+        {"name": "matter", "kind": "DOMAIN"},
+        {"name": "mind", "kind": "DOMAIN"},
+        {"name": "amplify", "kind": "MODIFIER"},
+        {"name": "target", "kind": "REFERENCE"}
+      ],
+      "edges": [
+        ["fire", "matter", "DIRECT"],
+        ["mind", "matter", "MUTUAL"],
+        ["amplify", "fire", "DIRECT"],
+        ["matter", "target", "DIRECT"]
+      ],
+      "circle_closed": true,
+      "expected_tags": ["enchanting", "forging", "burning"],
+      "description": "Зачарование клинка — огонь+разум в материю цели"
+    },
+    "pottery": {
+      "nodes": [
+        {"name": "water", "kind": "FORCE", "element": "WATER"},
+        {"name": "earth", "kind": "FORCE", "element": "EARTH"},
+        {"name": "fire", "kind": "FORCE", "element": "FIRE"},
+        {"name": "matter", "kind": "DOMAIN"},
+        {"name": "here", "kind": "REFERENCE"}
+      ],
+      "edges": [
+        ["water", "earth", "MUTUAL"],
+        ["earth", "fire", "SEQUENCE"],
+        ["earth", "matter", "DIRECT"],
+        ["matter", "here", "DIRECT"]
+      ],
+      "circle_closed": true,
+      "expected_tags": ["pottery", "shaping", "hardening"],
+      "description": "Гончарное дело — вода+земля(глина), затем огонь(обжиг)"
+    }
+  }
+}

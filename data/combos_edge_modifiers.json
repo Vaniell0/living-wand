@@ -1,0 +1,127 @@
+{
+  "_doc": "Edge type × context interactions. How different edge types modify the meaning of connections beyond the current simple multipliers in algebra.py. Also modifier combinations.",
+
+  "edge_semantics": {
+    "DIRECT": {
+      "description": "A направляет/модифицирует B. Порядок важен.",
+      "examples": {
+        "force→domain": "Элемент окрашивает домен (fire→body = лихорадка)",
+        "domain→force": "Домен фокусирует элемент (body→fire = телесный жар)",
+        "modifier→force": "Модификатор усиливает/ослабляет (amplify→fire = мощный огонь)",
+        "vector→force": "Направляет элемент (outward→fire = огненный шар наружу)",
+        "vector→domain": "Направляет эффект домена (inward→body = самоисцеление)",
+        "scalar→force": "Масштабирует элемент (wave→fire = огненная волна, point→fire = точечный ожог)",
+        "reference→anything": "Указывает цель (target→fire = огонь на цель, self→body = своё тело)"
+      }
+    },
+    "MUTUAL": {
+      "description": "A и B смешиваются. Порядок не важен. Синергии и отмены.",
+      "special_rules": [
+        "same_element: reinforcement ×1.8",
+        "synergy_pair: emergent effect + multiplier",
+        "cancel_pair: partial/full annihilation",
+        "domain+domain: multi-domain, stability penalty",
+        "force+domain: infusion (element colors the domain)"
+      ]
+    },
+    "SEQUENCE": {
+      "description": "Сначала A, потом B. Временная цепочка.",
+      "semantic_tags": ["sequenced", "chained", "two_phase"],
+      "examples": {
+        "fire→water": "Сначала поджечь, потом затушить = закалка",
+        "light→dark": "Вспышка, потом тьма = ослепление",
+        "heal→attack": "Подлечить себя, потом атаковать = подготовка",
+        "weaken→attack": "Ослабить врага, потом ударить = тактика"
+      }
+    },
+    "CONDITION": {
+      "description": "Если A успешно — запускается B. Условный триггер.",
+      "magnitude_penalty": 0.8,
+      "semantic_tags": ["conditional", "triggered", "contingent"],
+      "examples": {
+        "fire→[cond]→heal_self": "Если огонь попал — лечим себя",
+        "attack→[cond]→retreat": "Ударил — отступаешь",
+        "detect→[cond]→light": "Обнаружил врага — подсветить"
+      }
+    },
+    "NEGATE": {
+      "description": "NOT A → инверсия сигнала. Магнитуда ×-0.7.",
+      "semantic_tags": ["negated", "inverted", "reversed_effect"],
+      "examples": {
+        "neg(fire)": "Анти-огонь = поглощение тепла, заморозка",
+        "neg(light)": "Анти-свет = создание тьмы",
+        "neg(healing)": "Анти-исцеление = отравление, болезнь",
+        "neg(gravity)": "Анти-гравитация = левитация"
+      }
+    },
+    "ITERATE": {
+      "description": "Повтор A. Зацикливание, поддержание эффекта. Магнитуда ×1.5, длительность ×1.5.",
+      "semantic_tags": ["sustained", "repeating", "pulsing", "dot"],
+      "examples": {
+        "iter(fire)": "Постоянное горение (DoT)",
+        "iter(heal)": "Регенерация (HoT)",
+        "iter(light)": "Постоянное освещение = фонарь",
+        "iter(wave)": "Пульсация = ритмичные волны"
+      }
+    },
+    "LIMIT": {
+      "description": "Ограничение A. Уменьшение зоны ×0.5, магнитуда ×0.8, но увеличение точности.",
+      "semantic_tags": ["focused", "contained", "precise", "concentrated"],
+      "examples": {
+        "limit(fire)": "Точечный огонь = зажигалка, свеча",
+        "limit(explosion)": "Направленный взрыв = shaped charge",
+        "limit(heal)": "Точечное исцеление = хирургия",
+        "limit(wave)": "Луч вместо волны"
+      }
+    }
+  },
+
+  "modifier_combos": {
+    "amplify+amplify": {
+      "multiplier": 2.0,
+      "stability_penalty": 0.7,
+      "tags": ["overcharged", "unstable_power", "explosion_risk"],
+      "description": "Двойное усиление — перегрузка, нестабильная мощь, риск взрыва"
+    },
+    "amplify+weaken": {
+      "multiplier": 1.0,
+      "tags": ["balanced", "normalized", "controlled"],
+      "description": "Усиление + ослабление = контроль, нормализация"
+    },
+    "amplify+hold": {
+      "multiplier": 1.5,
+      "tags": ["sustained_power", "battery", "reservoir"],
+      "description": "Усилить и удержать — батарея, резервуар силы"
+    },
+    "amplify+dispel": {
+      "multiplier": 1.3,
+      "tags": ["purge", "forced_dispel", "cleansing_burst"],
+      "description": "Усиленное развеивание — очищающий всплеск"
+    },
+    "weaken+hold": {
+      "multiplier": 0.6,
+      "tags": ["suppress", "seal", "bind", "imprison"],
+      "description": "Ослабить и удержать — подавление, печать, заключение"
+    },
+    "weaken+dispel": {
+      "multiplier": 0.5,
+      "tags": ["drain", "siphon", "entropy_field"],
+      "description": "Ослабить и развеять — вытягивание, сифон, поле энтропии"
+    },
+    "hold+dispel": {
+      "multiplier": 0.8,
+      "tags": ["stasis", "freeze_magic", "anti_magic_zone"],
+      "description": "Удержать и развеять — стазис, заморозка магии, антимагическая зона"
+    },
+    "hold+hold": {
+      "multiplier": 0.9,
+      "tags": ["permanent", "eternal", "petrified", "time_lock"],
+      "description": "Двойное удержание — постоянный эффект, окаменение, временной замок"
+    },
+    "dispel+dispel": {
+      "multiplier": 0.3,
+      "tags": ["void", "null_zone", "magic_dead_zone", "silence"],
+      "description": "Двойное развеивание — пустота, мёртвая зона магии, абсолютная тишина"
+    }
+  }
+}

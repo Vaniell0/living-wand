@@ -1,0 +1,149 @@
+{
+  "_doc": "Triple synergies — when 3+ elements/domains are all connected via MUTUAL edges. These override pairwise interactions with a stronger emergent effect. Key format: sorted alphabetical, '+' separated.",
+
+  "_elements_triple": {
+    "fire+water+air": {
+      "multiplier": 1.6,
+      "tags": ["steam_storm", "geyser", "volcanic_cloud", "thermal"],
+      "description": "Паровой шторм — кипящий туман несёт ветром, гейзер, термальный взрыв"
+    },
+    "fire+water+earth": {
+      "multiplier": 1.5,
+      "tags": ["pottery", "ceramic", "obsidian", "hot_spring"],
+      "description": "Огонь выпаривает воду из глины — керамика, обсидиан, горячий источник"
+    },
+    "fire+air+earth": {
+      "multiplier": 1.6,
+      "tags": ["volcano", "ash_cloud", "magma_flow", "eruption"],
+      "description": "Вулкан — магма, пепельное облако, извержение"
+    },
+    "fire+air+light": {
+      "multiplier": 1.5,
+      "tags": ["sun_beam", "solar_flare", "plasma", "corona"],
+      "description": "Солнечный луч — плазма, солнечная вспышка, корона"
+    },
+    "fire+air+dark": {
+      "multiplier": 1.4,
+      "tags": ["smoke", "choking", "smog", "dark_storm"],
+      "description": "Дым и мрак — удушающий смог, тёмный шторм"
+    },
+    "fire+earth+light": {
+      "multiplier": 1.5,
+      "tags": ["sacred_forge", "sun_stone", "glowing_metal", "beacon_tower"],
+      "description": "Священная кузница — солнечный камень, раскалённый металл, маяк"
+    },
+    "fire+earth+dark": {
+      "multiplier": 1.4,
+      "tags": ["infernal", "underground_fire", "coal", "smoldering"],
+      "description": "Адское пламя — подземный огонь, тлеющий уголь"
+    },
+    "fire+light+dark": {
+      "multiplier": 1.3,
+      "tags": ["eclipse_fire", "shadow_beacon", "purgatory"],
+      "description": "Огонь затмения — теневой маяк, чистилище, двойственное пламя"
+    },
+    "water+air+earth": {
+      "multiplier": 1.5,
+      "tags": ["swamp", "monsoon", "quicksand", "delta"],
+      "description": "Болото — муссон, зыбучие пески, дельта реки"
+    },
+    "water+air+light": {
+      "multiplier": 1.4,
+      "tags": ["rainbow", "morning_dew", "prism_rain", "halo"],
+      "description": "Радуга — утренняя роса, призматический дождь, нимб"
+    },
+    "water+air+dark": {
+      "multiplier": 1.3,
+      "tags": ["fog", "phantom_mist", "ghost_rain", "cold_front"],
+      "description": "Туман — призрачная мгла, дождь-призрак, холодный фронт"
+    },
+    "water+earth+light": {
+      "multiplier": 1.4,
+      "tags": ["oasis", "crystal_pool", "coral", "spring"],
+      "description": "Оазис — кристальный бассейн, кораллы, родник"
+    },
+    "water+earth+dark": {
+      "multiplier": 1.3,
+      "tags": ["tar_pit", "bog", "underground_river", "silt"],
+      "description": "Смоляная яма — трясина, подземная река, ил"
+    },
+    "water+light+dark": {
+      "multiplier": 1.2,
+      "tags": ["moonlight_water", "bioluminescence", "mirror_pool", "reflection_realm"],
+      "description": "Лунная вода — биолюминесценция, зеркальный пруд, мир отражений"
+    },
+    "air+earth+light": {
+      "multiplier": 1.3,
+      "tags": ["mountain_dawn", "eagle_sight", "panorama", "summit"],
+      "description": "Горный рассвет — орлиный взор, панорама, вершина"
+    },
+    "air+earth+dark": {
+      "multiplier": 1.3,
+      "tags": ["cave_wind", "dust_devil", "sinkhole", "whispering_stones"],
+      "description": "Пещерный ветер — пылевой дьявол, провал, шепчущие камни"
+    },
+    "air+light+dark": {
+      "multiplier": 1.2,
+      "tags": ["aurora", "mirage_shadow", "twilight_wind", "phantom_light"],
+      "description": "Полярное сияние — теневой мираж, сумеречный ветер"
+    },
+    "earth+light+dark": {
+      "multiplier": 1.3,
+      "tags": ["geode", "deep_crystal", "underworld_gate", "buried_treasure"],
+      "description": "Жеода — глубинный кристалл, врата подземного мира, сокрытое сокровище"
+    },
+    "fire+water+light": {
+      "multiplier": 1.4,
+      "tags": ["hot_spring_glow", "purification_bath", "sauna", "cleansing_steam"],
+      "description": "Светящийся горячий источник — очищающая баня, сауна"
+    },
+    "fire+water+dark": {
+      "multiplier": 1.3,
+      "tags": ["boiling_abyss", "toxic_geyser", "acid", "corrosive_steam"],
+      "description": "Кипящая бездна — токсичный гейзер, кислота, едкий пар"
+    }
+  },
+
+  "_mixed_triple": {
+    "fire+body+life": {
+      "multiplier": 1.5,
+      "tags": ["phoenix_rebirth", "fever_cure", "cauterize_heal", "burning_vitality"],
+      "description": "Феникс — огненное исцеление, прижигание лечит, горящая жизненная сила"
+    },
+    "water+body+life": {
+      "multiplier": 1.5,
+      "tags": ["full_healing", "baptism", "blood_magic", "rejuvenation_water"],
+      "description": "Полное исцеление — крещение, магия крови, водное омоложение"
+    },
+    "dark+mind+life": {
+      "multiplier": 1.4,
+      "tags": ["necromancy_full", "possession", "soul_magic", "death_whisper"],
+      "description": "Полная некромантия — одержимость, магия души, шёпот мёртвых"
+    },
+    "light+mind+life": {
+      "multiplier": 1.5,
+      "tags": ["awakening", "enlightenment_full", "resurrection", "divine_wisdom"],
+      "description": "Пробуждение — полное просветление, воскрешение, божественная мудрость"
+    },
+    "earth+matter+space": {
+      "multiplier": 1.4,
+      "tags": ["fortress", "dungeon_craft", "terraforming", "architecture_magic"],
+      "description": "Крепость — магическая архитектура, терраформирование, создание подземелий"
+    },
+    "air+mind+space": {
+      "multiplier": 1.3,
+      "tags": ["astral_wind", "dream_travel", "telepathy_far", "thought_messenger"],
+      "description": "Астральный ветер — путешествие сквозь сны, дальняя телепатия, мысль-гонец"
+    },
+    "fire+matter+time": {
+      "multiplier": 1.3,
+      "tags": ["eternal_forge", "aging_metal", "rust_to_new", "phoenix_blade"],
+      "description": "Вечная кузня — старение/обновление металла, клинок феникса"
+    },
+    "water+space+time": {
+      "multiplier": 1.4,
+      "tags": ["river_of_time", "temporal_flow", "memory_stream", "styx"],
+      "description": "Река времени — темпоральный поток, поток памяти, Стикс"
+    }
+  }
+}

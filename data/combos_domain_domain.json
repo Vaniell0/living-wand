@@ -1,0 +1,98 @@
+{
+  "_doc": "Domain × Domain interactions. 15 unique pairs from 6 domains. When two domains combine via MUTUAL, they create cross-domain effects. stability_penalty applies because multi-domain spells are harder to control.",
+
+  "body+mind": {
+    "multiplier": 1.3,
+    "stability_penalty": 0.9,
+    "tags": ["psychosomatic", "meditation", "martial_arts", "body_awareness", "reflex"],
+    "description": "Тело + разум — психосоматика, медитация, боевые искусства, осознанность тела"
+  },
+  "body+matter": {
+    "multiplier": 1.3,
+    "stability_penalty": 0.95,
+    "tags": ["prosthetic", "armor_skin", "bone_shaping", "petrification"],
+    "description": "Тело + материя — протез, кожа-броня, формовка костей, окаменение"
+  },
+  "body+space": {
+    "multiplier": 1.2,
+    "stability_penalty": 0.9,
+    "tags": ["teleportation_body", "stretching", "size_change", "phasing"],
+    "description": "Тело + пространство — телепортация тела, растяжение, изменение размера, прохождение сквозь"
+  },
+  "body+time": {
+    "multiplier": 1.2,
+    "stability_penalty": 0.85,
+    "tags": ["aging_body", "rejuvenation", "regeneration", "suspended_animation"],
+    "description": "Тело + время — старение/омоложение, регенерация, анабиоз"
+  },
+  "body+life": {
+    "multiplier": 1.4,
+    "stability_penalty": 0.95,
+    "tags": ["healing", "surgery", "mutation", "shapeshifting", "fertility_body"],
+    "description": "Тело + жизнь — исцеление, хирургия, мутация, оборотничество"
+  },
+
+  "mind+matter": {
+    "multiplier": 1.2,
+    "stability_penalty": 0.9,
+    "tags": ["telekinesis", "enchanting", "golem", "animation"],
+    "description": "Разум + материя — телекинез, зачарование предметов, големы, анимация объектов"
+  },
+  "mind+space": {
+    "multiplier": 1.2,
+    "stability_penalty": 0.85,
+    "tags": ["clairvoyance", "astral_projection", "telepathy_range", "remote_viewing"],
+    "description": "Разум + пространство — ясновидение, астральная проекция, телепатия на расстоянии"
+  },
+  "mind+time": {
+    "multiplier": 1.3,
+    "stability_penalty": 0.8,
+    "tags": ["prophecy", "memory_time", "deja_vu", "foresight", "hindsight"],
+    "description": "Разум + время — пророчество, память о будущем, дежавю, предвидение"
+  },
+  "mind+life": {
+    "multiplier": 1.3,
+    "stability_penalty": 0.9,
+    "tags": ["empathy", "animal_speech", "hive_mind", "consciousness", "awakening"],
+    "description": "Разум + жизнь — эмпатия, речь животных, коллективный разум, пробуждение сознания"
+  },
+
+  "matter+space": {
+    "multiplier": 1.3,
+    "stability_penalty": 0.9,
+    "tags": ["construction", "architecture", "pocket_space", "bag_of_holding", "shaping_space"],
+    "description": "Материя + пространство — строительство, архитектура, карманное пространство, формовка среды"
+  },
+  "matter+time": {
+    "multiplier": 1.2,
+    "stability_penalty": 0.85,
+    "tags": ["rust_time", "restoration", "preservation", "fossil_matter", "timeless_object"],
+    "description": "Материя + время — ржавление/восстановление, консервация, вечный предмет"
+  },
+  "matter+life": {
+    "multiplier": 1.3,
+    "stability_penalty": 0.9,
+    "tags": ["organic_material", "wood_shaping", "living_armor", "symbiosis_matter"],
+    "description": "Материя + жизнь — органика, формовка дерева, живая броня, симбиоз с материалом"
+  },
+
+  "space+time": {
+    "multiplier": 1.4,
+    "stability_penalty": 0.7,
+    "tags": ["portal", "time_travel", "spacetime_warp", "relativity", "dimension_shift"],
+    "description": "Пространство + время — портал, путешествие во времени, искривление пространства-времени. Очень нестабильно"
+  },
+  "space+life": {
+    "multiplier": 1.2,
+    "stability_penalty": 0.9,
+    "tags": ["habitat", "ecosystem", "territory", "migration", "biome"],
+    "description": "Пространство + жизнь — среда обитания, экосистема, территория, миграция"
+  },
+
+  "time+life": {
+    "multiplier": 1.3,
+    "stability_penalty": 0.8,
+    "tags": ["evolution", "seasons", "lifecycle", "reincarnation", "bloom_wilt"],
+    "description": "Время + жизнь — эволюция, смена сезонов, жизненный цикл, реинкарнация"
+  }
+}
