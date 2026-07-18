@@ -328,6 +328,8 @@ class AdaptiveOCR:
                 loss.backward()
                 self.optimizer.step()
 
+        #FIXIT
+        self.base.features = lambda parameters: [] # parameters нет в features
         # Re-freeze features (in case something unfroze)
         for param in self.base.features.parameters():
             param.requires_grad = False
