@@ -299,7 +299,7 @@
       "nodes": [
         {"name": "time", "kind": "DOMAIN"},
         {"name": "hold", "kind": "MODIFIER"},
-        {"name": "hold2", "kind": "MODIFIER"},
+        {"id": "hold2", "name": "hold", "kind": "MODIFIER"},
         {"name": "wave", "kind": "SCALAR"},
         {"name": "here", "kind": "REFERENCE"}
       ],

@@ -13,7 +13,7 @@ import numpy as np
 import torch
 
 from .algebra import EdgeType, Element, SignalKind, SpellGraph, evaluate_spell
-from .checker import CheckResult, Verdict, check_spell
+from .checker import CheckResult, Verdict, check_spell, spell_from_graph
 from .crystal import CrystalRegistry
 from .effect import EffectDescription, interpret_effect
 from .events import Pole
@@ -148,16 +148,7 @@ class CastingPipelineV2:
 
         # Syntax check
         if spell is None:
-            # Build a minimal Spell for the checker
-            primitives = []
-            for nid, node in graph.nodes.items():
-                if node.name in PRIMITIVE_BY_NAME:
-                    primitives.append(PRIMITIVE_BY_NAME[node.name])
-            connections = []
-            for i, edge in enumerate(graph.edges):
-                op_val = min(edge.edge_type.value, len(Operator) - 1)
-                connections.append(Connection(edge.from_id, edge.to_id, Operator(op_val)))
-            spell = Spell(primitives, connections, graph.circle_closed, graph.circle_radius)
+            spell = spell_from_graph(graph)
 
         check = check_spell(spell)
 

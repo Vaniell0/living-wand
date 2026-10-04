@@ -54,6 +54,13 @@ class WandAdapter(nn.Module):
         # Starts small, grows with experience
         self.gate_scale = nn.Parameter(torch.tensor(0.1))
 
+        # A fresh wand must be an exact identity over SpellFormer: zero the
+        # output layer of every head so personality only appears through
+        # training (gradients still flow — the hidden layer is random).
+        for head in self.pole_heads:
+            nn.init.zeros_(head[-1].weight)
+            nn.init.zeros_(head[-1].bias)
+
     def forward(self, base_effect: torch.Tensor,
                 spell_pole_dist: torch.Tensor) -> torch.Tensor:
         """Apply wand personality to base SpellFormer output.

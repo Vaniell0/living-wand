@@ -125,14 +125,14 @@ def check_spell(spell: Spell) -> CheckResult:
             })
             if pair in ANTAGONISMS:
                 has_contradiction = True
-                names = list(pair)
-                issues.append(f"Antagonism: {names[0]} ↔ {names[1]} — unstable")
+                names = sorted(pair)
+                issues.append(f"Antagonism: {names[0]} ↔ {names[-1]} — unstable")
 
             # Collapse check (MUTUAL connection of collapse pairs)
             if pair in COLLAPSE_PAIRS and conn.operator == Operator.MUTUAL:
                 has_collapse = True
-                names = list(pair)
-                issues.append(f"COLLAPSE RISK: {names[0]} ═══ {names[1]} — paradox!")
+                names = sorted(pair)  # frozenset({"time","time"}) has one element
+                issues.append(f"COLLAPSE RISK: {names[0]} ═══ {names[-1]} — paradox!")
 
     # 6. Determine verdict
     if has_collapse:
@@ -153,3 +153,32 @@ def check_spell(spell: Spell) -> CheckResult:
         has_contradiction=has_contradiction,
         has_collapse_risk=has_collapse,
     )
+
+
+def spell_from_graph(graph) -> Spell:
+    """Convert an algebra SpellGraph into the checker's Spell.
+
+    Edge types are mapped by NAME: EdgeType and Operator enums have different
+    numbering (Operator has REVERSE at 1), so mapping by value turned MUTUAL
+    into REVERSE and hid every collapse check.
+    """
+    from .spells import PRIMITIVE_BY_NAME
+
+    nid_to_idx: dict[int, int] = {}
+    primitives: list[Primitive] = []
+    for nid, node in graph.nodes.items():
+        prim = PRIMITIVE_BY_NAME.get(node.name)
+        if prim is not None:
+            nid_to_idx[nid] = len(primitives)
+            primitives.append(prim)
+    connections = []
+    for edge in graph.edges:
+        if edge.from_id in nid_to_idx and edge.to_id in nid_to_idx:
+            connections.append(Connection(nid_to_idx[edge.from_id], nid_to_idx[edge.to_id],
+                                          Operator[edge.edge_type.name]))
+    return Spell(primitives, connections, graph.circle_closed, graph.circle_radius)
+
+
+def check_graph(graph) -> CheckResult:
+    """Syntax check straight from a SpellGraph."""
+    return check_spell(spell_from_graph(graph))

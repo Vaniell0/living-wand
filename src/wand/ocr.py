@@ -204,19 +204,47 @@ def train_symbol_net(images: np.ndarray, labels: np.ndarray,
     return model, history
 
 
+_RUNE_GROUPS = [
+    ("fire", "water", "earth", "air", "light", "dark"),
+    ("body", "mind", "matter", "space", "time", "life"),
+    ("inward", "outward", "up", "down", "through", "reverse"),
+    ("point", "flow", "wave", "all"),
+    ("amplify", "weaken", "hold", "dispel"),
+    ("here", "there", "self", "target"),
+]
+
+
+def _rune_group(name: str) -> int:
+    for i, group in enumerate(_RUNE_GROUPS):
+        if name in group:
+            return i
+    return -1
+
+
 class AdaptiveOCR:
-    """OCR wrapper that learns from SpellFormer feedback.
+    """OCR wrapper that adapts to one player's handwriting.
 
-    After each cast, SpellFormer produces an effect. If the effect strongly
-    suggests certain runes (high element/domain intensity), but OCR predicted
-    something different, the correction is stored and OCR fine-tunes.
+    Learns ONLY from trusted labels: explicit player confirmations
+    (`confirm`) and, optionally, strictly-guarded context hints. The base
+    CNN features stay frozen; only the classifier head trains, and every
+    fine-tune step replays synthetic anchor samples so the head cannot
+    drift away from the original alphabet.
 
-    The base CNN features stay frozen. Only a small adaptation layer trains.
+    Why not learn from SpellFormer feedback by default: the spell graph that
+    SpellFormer reads is built FROM the OCR predictions, so its element and
+    domain intensities mostly echo what OCR already said. Using them as
+    labels is confirmation bias — earlier versions relabelled e.g. an
+    `amplify` glyph as `fire` simply because another glyph in the same spell
+    was fire.
     """
 
-    def __init__(self, base_cnn: SymbolNet, lr: float = 1e-3, buffer_size: int = 100):
+    def __init__(self, base_cnn: SymbolNet, lr: float = 1e-3, buffer_size: int = 100,
+                 self_training: bool = False, anchors_per_class: int = 3):
         self.base = base_cnn
         self.buffer: deque[tuple[np.ndarray, int]] = deque(maxlen=buffer_size)
+        self.self_training = self_training
+        self.anchors_per_class = anchors_per_class
+        self._anchors: tuple[np.ndarray, np.ndarray] | None = None
 
         # Freeze everything except classifier
         for param in self.base.parameters():
@@ -246,78 +274,91 @@ class AdaptiveOCR:
             return [(SYMBOL_NAMES[idx.item()], prob.item())
                     for idx, prob in zip(top_k.indices, top_k.values)]
 
-    def correct(self, img: np.ndarray, correct_label: int):
-        """Record a correction and fine-tune.
+    def confirm(self, img: np.ndarray, label: str | int):
+        """Trusted label from the player (e.g. they clicked the right rune)."""
+        idx = SYMBOL_NAMES.index(label) if isinstance(label, str) else int(label)
+        self.correct(img, idx)
 
-        Called when SpellFormer or the player indicates the OCR prediction
-        was wrong for this image.
-        """
+    def correct(self, img: np.ndarray, correct_label: int):
+        """Record a trusted correction and fine-tune."""
         self.buffer.append((img.copy(), correct_label))
         self.corrections += 1
         self._fine_tune()
 
     def feedback_from_spell(self, images: list[np.ndarray],
                             ocr_predictions: list[str],
-                            spell_context: dict):
-        """Receive feedback from SpellFormer about what runes were likely intended.
+                            spell_context: dict) -> int:
+        """Optional, guarded context hint (off unless self_training=True).
 
-        Args:
-            images: the drawn symbol images
-            ocr_predictions: what OCR predicted for each
-            spell_context: dict with 'element_intensity' (6,) and 'domain_intensity' (6,)
-                          from SpellFormer output — tells us which runes the magic
-                          model thinks are present
+        A glyph is relabelled only when ALL hold:
+          - OCR itself was unsure (top-1 < 0.6, margin to the alternative < 0.25);
+          - the alternative is in the same rune group as the prediction;
+          - the alternative is strongly present in the spell context;
+          - no OTHER glyph already accounts for that rune.
+        Confident predictions are never fed back (no self-reinforcement).
+
+        Returns the number of corrections applied.
         """
+        if not self.self_training:
+            return 0
         elem_int = spell_context.get("element_intensity")
         dom_int = spell_context.get("domain_intensity")
         if elem_int is None or dom_int is None:
-            return
+            return 0
 
-        # Map strong intensities to likely rune names
-        ELEM_NAMES = ["fire", "water", "air", "earth", "light", "dark"]  # indices 0-5
-        DOM_NAMES = ["body", "mind", "matter", "space", "time", "life"]  # indices 6-11 in SYMBOL_NAMES
+        ELEM_NAMES = ["fire", "water", "air", "earth", "light", "dark"]
+        DOM_NAMES = ["body", "mind", "matter", "space", "time", "life"]
+        likely = {ELEM_NAMES[i] for i, v in enumerate(elem_int) if v > 0.5}
+        likely |= {DOM_NAMES[i] for i, v in enumerate(dom_int) if v > 0.5}
 
-        likely_runes = set()
-        for i, intensity in enumerate(elem_int):
-            if intensity > 0.5:
-                likely_runes.add(ELEM_NAMES[i])
-        for i, intensity in enumerate(dom_int):
-            if intensity > 0.5:
-                likely_runes.add(DOM_NAMES[i])
+        applied = 0
+        for i, (img, pred_name) in enumerate(zip(images, ocr_predictions)):
+            others = set(ocr_predictions[:i] + ocr_predictions[i + 1:])
+            top = self.predict_top_k(img, k=3)
+            p1 = top[0][1]
+            if p1 >= 0.6:
+                continue
+            for alt_name, alt_prob in top[1:]:
+                if (alt_name in likely and alt_name not in others
+                        and _rune_group(alt_name) == _rune_group(pred_name)
+                        and p1 - alt_prob < 0.25):
+                    self.correct(img, SYMBOL_NAMES.index(alt_name))
+                    applied += 1
+                    break
+        return applied
 
-        if not likely_runes:
-            return
-
-        # Check each OCR prediction — if it's NOT in likely_runes but a likely
-        # rune IS, and the OCR confidence was low, this might be a correction
-        for img, pred_name in zip(images, ocr_predictions):
-            if pred_name in likely_runes:
-                # OCR agrees with magic — reinforce
-                if pred_name in SYMBOL_NAMES:
-                    label = SYMBOL_NAMES.index(pred_name)
-                    self.buffer.append((img.copy(), label))
-            else:
-                # OCR disagrees — check top predictions
-                top = self.predict_top_k(img, k=5)
-                for alt_name, alt_prob in top[1:]:  # skip first (already predicted)
-                    if alt_name in likely_runes and alt_prob > 0.1:
-                        # Alternative prediction matches magic context — correct
-                        label = SYMBOL_NAMES.index(alt_name)
-                        self.correct(img, label)
-                        break
+    def _anchor_set(self) -> tuple[np.ndarray, np.ndarray]:
+        """Synthetic samples replayed on every fine-tune (anti-forgetting)."""
+        if self._anchors is None:
+            from .synth_data import generate_sample
+            imgs, labels = [], []
+            for label in range(NUM_SYMBOLS):
+                for _ in range(self.anchors_per_class):
+                    imgs.append(generate_sample(label))
+                    labels.append(label)
+            self._anchors = (np.array(imgs), np.array(labels))
+        return self._anchors
 
     def _fine_tune(self, epochs: int = 2):
-        """Fine-tune classifier on replay buffer."""
+        """Fine-tune the classifier head on the replay buffer + anchors."""
         if len(self.buffer) < 5:
             return
 
         imgs = np.array([b[0] for b in self.buffer])
         labels = np.array([b[1] for b in self.buffer])
+        if self.anchors_per_class > 0:
+            a_imgs, a_labels = self._anchor_set()
+            imgs = np.concatenate([imgs, a_imgs])
+            labels = np.concatenate([labels, a_labels])
 
         x = torch.from_numpy(imgs).float().unsqueeze(1)
         y = torch.from_numpy(labels).long()
 
-        self.base.train()
+        # Frozen feature blocks must stay in eval mode: in train mode
+        # BatchNorm keeps updating running stats from tiny player batches even
+        # though requires_grad=False, silently shifting every prediction.
+        self.base.eval()
+        self.base.classifier.train()
         for _ in range(epochs):
             perm = torch.randperm(len(x))
             for i in range(0, len(x), 16):
@@ -327,12 +368,7 @@ class AdaptiveOCR:
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
-
-        #FIXIT
-        self.base.features = lambda parameters: [] # parameters нет в features
-        # Re-freeze features (in case something unfroze)
-        for param in self.base.features.parameters():
-            param.requires_grad = False
+        self.base.eval()
 
     def save_buffer(self, path: str):
         """Save replay buffer to disk."""

@@ -138,7 +138,12 @@ class SpellTokenizer:
         degrees.append(0)
 
         # --- Node section: list runes ---
-        node_order = sorted(graph.nodes.keys())  # deterministic order
+        # Canonical order (rune id, degree) — tokens must not depend on the
+        # order in which the player happened to draw the runes.
+        node_order = sorted(
+            graph.nodes.keys(),
+            key=lambda nid: (node_id_to_token.get(nid, 999), node_degrees.get(nid, 0)),
+        )
         for nid in node_order:
             tok = node_id_to_token.get(nid)
             if tok is None:
@@ -156,12 +161,8 @@ class SpellTokenizer:
 
         # --- Edge section: triples ---
         edge_count = 0
-        for edge in graph.edges:
-            src_tok = node_id_to_token.get(edge.from_id)
-            tgt_tok = node_id_to_token.get(edge.to_id)
-            op_tok = EDGE_TO_TOKEN.get(edge.edge_type)
-            if src_tok is None or tgt_tok is None or op_tok is None:
-                continue
+        for src_tok, op_tok, tgt_tok, src_deg, tgt_deg in self._canonical_edges(
+                graph, node_id_to_token, node_degrees):
 
             # Check space: need 4 tokens (EDGE_START + src + op + tgt) + EOS
             if len(tokens) + 5 > MAX_SEQ_LEN:
@@ -173,7 +174,7 @@ class SpellTokenizer:
 
             tokens.append(src_tok)
             roles.append(StructRole.EDGE)
-            degrees.append(min(node_degrees.get(edge.from_id, 0), 8))
+            degrees.append(src_deg)
 
             tokens.append(op_tok)
             roles.append(StructRole.EDGE)
@@ -181,7 +182,7 @@ class SpellTokenizer:
 
             tokens.append(tgt_tok)
             roles.append(StructRole.EDGE)
-            degrees.append(min(node_degrees.get(edge.to_id, 0), 8))
+            degrees.append(tgt_deg)
 
             edge_count += 1
 
@@ -211,6 +212,28 @@ class SpellTokenizer:
             node_count=node_count,
             edge_count=edge_count,
         )
+
+    @staticmethod
+    def _canonical_edges(graph: SpellGraph, node_id_to_token: dict[int, int],
+                         node_degrees: dict[int, int]) -> list[tuple[int, int, int, int, int]]:
+        """Edge triples (src, op, tgt, src_deg, tgt_deg) in canonical order.
+
+        MUTUAL is symmetric, so its endpoints are sorted too.
+        """
+        triples = []
+        for edge in graph.edges:
+            src_tok = node_id_to_token.get(edge.from_id)
+            tgt_tok = node_id_to_token.get(edge.to_id)
+            op_tok = EDGE_TO_TOKEN.get(edge.edge_type)
+            if src_tok is None or tgt_tok is None or op_tok is None:
+                continue
+            src_deg = min(node_degrees.get(edge.from_id, 0), 8)
+            tgt_deg = min(node_degrees.get(edge.to_id, 0), 8)
+            if edge.edge_type == EdgeType.MUTUAL and (tgt_tok, tgt_deg) < (src_tok, src_deg):
+                src_tok, tgt_tok, src_deg, tgt_deg = tgt_tok, src_tok, tgt_deg, src_deg
+            triples.append((src_tok, op_tok, tgt_tok, src_deg, tgt_deg))
+        triples.sort()
+        return triples
 
     def detokenize(self, token_ids: list[int]) -> tuple[list[str], list[tuple[str, str, str]]]:
         """Convert token sequence back to (rune_names, edge_triples).

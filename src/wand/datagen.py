@@ -436,32 +436,13 @@ def generate_modifier_combo_graph() -> SpellGraph:
 def generate_recipe_graph() -> SpellGraph:
     """Generate a graph from a named recipe (with slight perturbation)."""
     from .combo_data import RECIPES
+    from .algebra import graph_from_spec
 
     recipe = random.choice(list(RECIPES.values()))
-
-    graph = SpellGraph()
-    name_to_id: dict[str, int] = {}
-
-    for node_spec in recipe["nodes"]:
-        name = node_spec["name"]
-        kind = SignalKind[node_spec["kind"]]
-        elem = Element[node_spec["element"]] if "element" in node_spec and node_spec["element"] else None
-        nid = graph.add_node(name, kind, elem)
-        # Handle duplicate names by using first occurrence
-        if name not in name_to_id:
-            name_to_id[name] = nid
-
-    for edge_spec in recipe["edges"]:
-        from_name, to_name, edge_type_name = edge_spec
-        from_id = name_to_id.get(from_name)
-        to_id = name_to_id.get(to_name)
-        if from_id is not None and to_id is not None:
-            edge_type = EdgeType[edge_type_name]
-            # 5% chance to drop edge (perturbation)
-            if random.random() > 0.05:
-                graph.connect(from_id, to_id, edge_type)
-
-    graph.circle_closed = recipe.get("circle_closed", True)
+    # 5% chance to drop each edge (perturbation)
+    spec = dict(recipe)
+    spec["edges"] = [e for e in recipe["edges"] if random.random() > 0.05]
+    graph = graph_from_spec(spec)
     # Slight radius perturbation
     graph.circle_radius = random.uniform(0.8, 1.2)
 

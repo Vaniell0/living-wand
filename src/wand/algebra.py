@@ -46,6 +46,42 @@ class Element(IntEnum):
     DARK = 5
 
 
+# Single source of truth for the rune alphabet: name → (SignalKind, Element|None).
+# Order matches tokenizer.RUNE_NAMES and spells.py primitives.
+RUNES: dict[str, tuple[SignalKind, Element | None]] = {
+    "fire": (SignalKind.FORCE, Element.FIRE),
+    "water": (SignalKind.FORCE, Element.WATER),
+    "air": (SignalKind.FORCE, Element.AIR),
+    "earth": (SignalKind.FORCE, Element.EARTH),
+    "light": (SignalKind.FORCE, Element.LIGHT),
+    "dark": (SignalKind.FORCE, Element.DARK),
+    "body": (SignalKind.DOMAIN, None),
+    "mind": (SignalKind.DOMAIN, None),
+    "matter": (SignalKind.DOMAIN, None),
+    "space": (SignalKind.DOMAIN, None),
+    "time": (SignalKind.DOMAIN, None),
+    "life": (SignalKind.DOMAIN, None),
+    "inward": (SignalKind.VECTOR, None),
+    "outward": (SignalKind.VECTOR, None),
+    "up": (SignalKind.VECTOR, None),
+    "down": (SignalKind.VECTOR, None),
+    "through": (SignalKind.VECTOR, None),
+    "reverse": (SignalKind.VECTOR, None),
+    "point": (SignalKind.SCALAR, None),
+    "flow": (SignalKind.SCALAR, None),
+    "wave": (SignalKind.SCALAR, None),
+    "all": (SignalKind.SCALAR, None),
+    "amplify": (SignalKind.MODIFIER, None),
+    "weaken": (SignalKind.MODIFIER, None),
+    "hold": (SignalKind.MODIFIER, None),
+    "dispel": (SignalKind.MODIFIER, None),
+    "here": (SignalKind.REFERENCE, None),
+    "there": (SignalKind.REFERENCE, None),
+    "self": (SignalKind.REFERENCE, None),
+    "target": (SignalKind.REFERENCE, None),
+}
+
+
 # Data-driven combos — loaded from JSON via combo_data.py
 # Lazy import to avoid circular dependency (combo_data imports Element from here)
 _combo_data = None
@@ -157,8 +193,22 @@ class SpellGraph:
         self.nodes[nid] = SpellNode(nid, name, NodeType.SOURCE, signal_kind, element)
         return nid
 
+    def add_rune(self, name: str) -> int:
+        """Add a node by rune name, looking up its kind/element in RUNES."""
+        kind, element = RUNES[name]
+        return self.add_node(name, kind, element)
+
     def connect(self, from_id: int, to_id: int, edge_type: EdgeType = EdgeType.DIRECT):
         self.edges.append(SpellEdge(from_id, to_id, edge_type))
+
+    def to_spec(self) -> dict:
+        """JSON-friendly description (inverse of graph_from_spec)."""
+        return {
+            "nodes": [{"id": str(nid), "name": n.name} for nid, n in self.nodes.items()],
+            "edges": [[str(e.from_id), str(e.to_id), e.edge_type.name] for e in self.edges],
+            "circle_closed": self.circle_closed,
+            "circle_radius": self.circle_radius,
+        }
 
     def adjacency(self) -> dict[int, list[tuple[int, EdgeType]]]:
         """Build adjacency list (outgoing edges per node)."""
@@ -168,6 +218,32 @@ class SpellGraph:
             if e.edge_type == EdgeType.MUTUAL:
                 adj[e.to_id].append((e.from_id, e.edge_type))
         return adj
+
+
+def graph_from_spec(spec: dict) -> SpellGraph:
+    """Build a SpellGraph from a JSON spec (recipes, engine API, tests).
+
+    spec = {
+      "nodes": [{"name": "fire"}, {"id": "hold2", "name": "hold"}, ...],
+      "edges": [["hold2", "fire", "DIRECT"], ...],   # by id (defaults to name)
+      "circle_closed": true, "circle_radius": 1.0
+    }
+    Unknown rune names raise KeyError — callers decide how to report it.
+    """
+    graph = SpellGraph(
+        circle_closed=bool(spec.get("circle_closed", True)),
+        circle_radius=float(spec.get("circle_radius", 1.0)),
+    )
+    ref_to_id: dict[str, int] = {}
+    for node in spec.get("nodes", []):
+        name = node["name"] if isinstance(node, dict) else str(node)
+        ref = node.get("id", name) if isinstance(node, dict) else name
+        nid = graph.add_rune(name)
+        ref_to_id.setdefault(str(ref), nid)
+    for edge in spec.get("edges", []):
+        src, dst, etype = edge[0], edge[1], edge[2] if len(edge) > 2 else "DIRECT"
+        graph.connect(ref_to_id[str(src)], ref_to_id[str(dst)], EdgeType[str(etype).upper()])
+    return graph
 
 
 # ═══════════════════════════════════════════
@@ -217,6 +293,34 @@ class SpellEffect:
         return " | ".join(parts)
 
 
+# Operator precedence for evaluation: negation binds first, sequencing last.
+EDGE_PRECEDENCE = {
+    EdgeType.NEGATE: 0,
+    EdgeType.LIMIT: 1,
+    EdgeType.DIRECT: 2,
+    EdgeType.MUTUAL: 3,
+    EdgeType.ITERATE: 4,
+    EdgeType.CONDITION: 5,
+    EdgeType.SEQUENCE: 6,
+}
+
+
+def ordered_edges(graph: SpellGraph) -> list[SpellEdge]:
+    """Edges in evaluation order, independent of insertion order.
+
+    Within one precedence level, modifier sources go first (so `weaken→fire`
+    applies before `fire→target`), then edges are ordered by rune names.
+    """
+    def key(e: SpellEdge):
+        src, dst = graph.nodes[e.from_id], graph.nodes[e.to_id]
+        names = (src.name, dst.name)
+        if e.edge_type == EdgeType.MUTUAL:
+            names = tuple(sorted(names))
+        src_is_modifier = src.signal_kind == SignalKind.MODIFIER
+        return (EDGE_PRECEDENCE[e.edge_type], not src_is_modifier, names)
+    return sorted(graph.edges, key=key)
+
+
 def evaluate_spell(graph: SpellGraph) -> SpellEffect:
     """Evaluate a spell graph into a concrete effect.
 
@@ -243,10 +347,11 @@ def evaluate_spell(graph: SpellGraph) -> SpellEffect:
     adj = graph.adjacency()
 
     # Step 2: resolve edges (propagate modifications)
-    # Process in topological-ish order (simple: iterate edges)
+    # Edges are applied in a fixed operator precedence, not in drawing order,
+    # so the same spell drawn in a different order evaluates identically.
     processed_edges: set[tuple[int, int]] = set()
 
-    for edge in graph.edges:
+    for edge in ordered_edges(graph):
         key = (edge.from_id, edge.to_id)
         if key in processed_edges:
             continue
@@ -330,9 +435,10 @@ def evaluate_spell(graph: SpellGraph) -> SpellEffect:
         effect.tags.update(sig.tags)
 
     # Step 4: circle effects
+    leak = 1.0
     if not graph.circle_closed:
         effect.stability *= 0.5
-        effect.total_power *= 0.7
+        leak = 0.7  # applied below; total_power is not computed yet here
         effect.warnings.append("Open circle — energy leaks")
 
     effect.area *= graph.circle_radius
@@ -340,7 +446,7 @@ def evaluate_spell(graph: SpellGraph) -> SpellEffect:
     # Total power = sum of all force + domain magnitudes
     force_total = sum(max(0, v) for v in effect.force_power.values())
     domain_total = sum(max(0, v) for v in effect.domain_power.values())
-    effect.total_power = (force_total + domain_total) * effect.stability
+    effect.total_power = (force_total + domain_total) * effect.stability * leak
 
     return effect
 
@@ -350,14 +456,10 @@ def _resolve_direct(source: Signal, target: Signal, effect: SpellEffect,
     """DIRECT edge: source modifies/targets the target signal."""
     cd = _combos()
 
-    # Modifier → anything: amplify/weaken/hold/dispel
+    # Modifier → anything: each modifier rune has its own semantics.
+    # A negated modifier (NEGATE edge into it earlier) inverts its meaning.
     if source.kind == SignalKind.MODIFIER:
-        if source.magnitude > 0:
-            target.magnitude *= 1.5
-            target.tags.add("amplified")
-        else:
-            target.magnitude *= 0.5
-            target.tags.add("weakened")
+        _apply_modifier(graph.nodes[from_id].name, source, target, effect)
 
     # Vector → anything: adds directional tag
     elif source.kind == SignalKind.VECTOR:
@@ -397,6 +499,34 @@ def _resolve_direct(source: Signal, target: Signal, effect: SpellEffect,
     elif source.kind == SignalKind.DOMAIN and target.kind == SignalKind.FORCE:
         target.tags.add("domain-focused")
         effect.stability *= 1.1
+
+
+# name → (magnitude mult, duration mult, stability mult, tag)
+MODIFIER_RULES: dict[str, tuple[float, float, float, str]] = {
+    "amplify": (1.5, 1.0, 0.95, "amplified"),
+    "weaken":  (0.5, 1.0, 1.10, "weakened"),
+    "hold":    (0.9, 1.6, 1.05, "sustained"),
+    "dispel":  (0.25, 0.7, 1.0, "dispelled"),
+}
+
+
+def _apply_modifier(name: str, source: Signal, target: Signal, effect: SpellEffect):
+    """Apply a modifier rune to its DIRECT target.
+
+    Before this table existed every modifier fell into the `magnitude > 0`
+    branch, so weaken/hold/dispel all behaved like amplify.
+    """
+    mag, dur, stab, tag = MODIFIER_RULES.get(name, (1.5, 1.0, 1.0, "amplified"))
+    if source.magnitude < 0:
+        # negated modifier: invert the magnitude effect (anti-amplify = weaken)
+        mag = 1.0 / mag
+        tag = f"inverted-{tag}"
+    target.magnitude *= mag
+    target.tags.add(tag)
+    effect.duration *= dur
+    effect.stability *= stab
+    if name == "dispel":
+        effect.tags.add("dispel")
 
 
 def _resolve_mutual(sig_a: Signal, sig_b: Signal, effect: SpellEffect,
