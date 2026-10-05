@@ -12,6 +12,12 @@ HTTP (Godot HTTPRequest, Unity UnityWebRequest, Unreal HTTP module, curl):
     POST /cast/strokes           {"strokes": [[[x, y], ...], ...], "circle_closed": true,
                                   "overrides": {"0": "fire"}}
     POST /outcome                {"program_id": "...", "hit": true, "totals": {"damage": 12}}
+    POST /brew                   {"ingredients": ["heartroot", "sunpetal"], "steps": ["steep"],
+                                  "flask": "glass", "mode": "drink" | "throw"}
+    POST /enchant                {"graph": {...}, "material": "silver", "trigger": "on_hit"}
+    GET  /crafts                 ingredients, steps, flasks, materials, triggers
+    POST /dream                  fall asleep: train the wand, get a vision
+    POST /dream/attempt          {"graph": {...}} → hot/cold feedback per aspect
     POST /sleep                  train the wand on accumulated outcomes
     POST /save
 
@@ -97,6 +103,43 @@ class Api:
                 return {"ok": True, "event": {"type": event.event_type.name,
                                               "poles": event.pole_affinity,
                                               "weight": event.weight}}
+            if op == "crafts":
+                from wand.actions import _data
+                ing = _data("ingredients.json")
+                mat = _data("materials.json")
+                return {k: v for k, v in {**ing, **mat}.items() if not k.startswith("_")}
+            if op == "brew":
+                from wand.craft import brew
+                potion = brew(payload["ingredients"], payload.get("steps", []),
+                              payload.get("flask", "glass"), payload.get("mode", "drink"),
+                              context=self.session.context)
+                self.session._programs[potion.program.id] = potion.program
+                return {"ok": True, "name": potion.name, "quality": potion.quality,
+                        "program": potion.program.to_dict()}
+            if op == "enchant":
+                from wand.craft import enchant
+                ench = enchant(graph_from_spec(payload["graph"]), payload["material"],
+                               payload.get("trigger", "on_hit"), payload.get("item", ""))
+                self.session._programs[ench.program.id] = ench.program
+                return {"ok": True, "item": ench.item, "charges": ench.charges,
+                        "program": ench.program.to_dict()}
+            if op == "dream":
+                vision = self.session.dream()
+                if vision is None:
+                    return {"ok": True, "vision": None}
+                return {"ok": True, "vision": vision.text, "new_runes_count": len(vision.new_runes)}
+            if op == "dream/hint":
+                v = self.session.vision
+                return {"ok": v is not None, "hint": v.hint() if v else None}
+            if op == "dream/attempt":
+                res = self.session.dream_attempt(graph_from_spec(payload["graph"]))
+                if res is None:
+                    return {"ok": False, "error": "not dreaming"}
+                return {"ok": True, "score": res.score, "solved": res.solved,
+                        "learned": res.learned, "feedback": res.text(),
+                        "aspects": [{"aspect": a, "matched": m} for a, m in res.feedback]}
+            if op == "lexicon":
+                return {"ok": True, **self.session.lexicon.to_dict()}
             if op == "sleep":
                 return {"ok": True, "trained": self.session.sleep()}
             if op == "save":

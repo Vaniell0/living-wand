@@ -85,6 +85,8 @@ class Target:
 @dataclass
 class Delivery:
     kind: str              # "instant" | "projectile" | "beam" | "zone" | "aura" | "touch"
+                           # crafts: "consume" (potion drunk), "splash" (potion thrown),
+                           #         "imbue" (bound to an item, fires on its trigger)
     speed: float = 0.0     # units/s for projectiles
     piercing: bool = False
     direction: str = "forward"  # forward | up | down | inward
@@ -356,6 +358,8 @@ def compile_program(
     authority: str = "blend",
     stability_bonus: float = 0.0,
     context: dict | None = None,
+    affinity: dict | None = None,
+    vessel_capacity: float | None = None,
     verbs: dict | None = None,
     max_ops: int = 3,
 ) -> SpellProgram:
@@ -366,7 +370,10 @@ def compile_program(
     `clarity` is the OCR confidence of the drawing; `stability_bonus` comes
     from the caster's mastery. `context` describes the world at the cast
     point, e.g. {"weather": "rain", "time": "night", "place": "forest"}
-    (see data/environment.json).
+    (see data/environment.json). `affinity` multiplies channels like the
+    context does ({"light": 1.4, "_all": 0.9, "_stability": 1.1}) — used by
+    enchanting (item material). `vessel_capacity` replaces the drawn circle
+    as the vessel (an alchemist's flask, an enchanted item).
     """
     verbs_cfg = verbs or load_verbs()
     has_model = model is not None
@@ -395,7 +402,10 @@ def compile_program(
     # (every edge is another multiplier and edges were free) — found by
     # explore.map_elites.
     load = len(graph.nodes) + 0.5 * len(graph.edges)
-    capacity = 7.0 * max(graph.circle_radius, 0.3) * (0.6 + 0.4 * clarity)
+    if vessel_capacity is not None:
+        capacity = float(vessel_capacity)
+    else:
+        capacity = 7.0 * max(graph.circle_radius, 0.3) * (0.6 + 0.4 * clarity)
     overload = load / capacity
     if overload > 1.0:
         stability *= overload ** -1.5
@@ -415,19 +425,24 @@ def compile_program(
         channels[dom] = channels.get(dom, 0.0) + p
 
     context_effects: dict[str, float] = {}
+    entries = []
     if context:
         env = _data("environment.json")
+        entries += [env.get(axis, {}).get(context.get(axis, ""), {})
+                    for axis in ("weather", "time", "place")]
+    if affinity:
+        entries.append(affinity)
+    if entries:
         mult: dict[str, float] = {}
         stab_mult = 1.0
-        for axis in ("weather", "time", "place"):
-            entry = env.get(axis, {}).get(context.get(axis, ""), {})
+        for entry in entries:
             for key, v in entry.items():
                 if key == "_stability":
                     stab_mult *= v
                 elif key == "_all":
                     for ch in channels:
                         mult[ch] = mult.get(ch, 1.0) * v
-                else:
+                elif not key.startswith("_"):
                     mult[key] = mult.get(key, 1.0) * v
         before = sum(abs(v) for v in channels.values()) or 1.0
         for ch in channels:
@@ -536,7 +551,7 @@ def compile_program(
         reasons.append("overcharged")
     if overload > 1.0:
         chance += min(0.4, 0.3 * (overload - 1.0))
-        reasons.append(f"circle overloaded ×{overload:.2f}")
+        reasons.append(f"vessel overloaded ×{overload:.2f}")
     chance = round(min(chance, 0.95), 4)
     backfire = []
     if chance > 0:
@@ -801,7 +816,8 @@ def json_schema() -> dict:
             "target": {"type": "object", "properties": {
                 "selector": {"enum": ["self", "target", "point", "caster_area"]}, "range": num}},
             "delivery": {"type": "object", "properties": {
-                "kind": {"enum": ["instant", "projectile", "beam", "zone", "aura", "touch"]},
+                "kind": {"enum": ["instant", "projectile", "beam", "zone", "aura", "touch",
+                                  "consume", "splash", "imbue"]},
                 "speed": num, "piercing": {"type": "boolean"}, "direction": s}},
             "shape": {"type": "object", "properties": {
                 "kind": {"enum": ["single", "sphere", "cone", "line", "ring", "wall"]},

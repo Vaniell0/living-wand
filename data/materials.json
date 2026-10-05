@@ -1,0 +1,18 @@
+{
+  "_doc": "Enchanting on the magic substrate: the item is the vessel. Capacity bounds how much spell it can hold; affinity multiplies channels (silver loves light, iron dulls magic but steadies it). The spell compiles through the same algebra; the program is bound to the item with a trigger.",
+  "materials": {
+    "wood":     {"name_ru": "дерево",   "capacity": 5.0,  "affinity": {"life": 1.3, "earth": 1.1, "fire": 0.7}},
+    "iron":     {"name_ru": "железо",   "capacity": 6.0,  "affinity": {"_all": 0.85, "earth": 1.2}, "stability": 1.15},
+    "silver":   {"name_ru": "серебро",  "capacity": 8.0,  "affinity": {"light": 1.4, "mind": 1.15, "dark": 0.6}},
+    "bone":     {"name_ru": "кость",    "capacity": 6.0,  "affinity": {"dark": 1.3, "body": 1.25, "light": 0.8}},
+    "cloth":    {"name_ru": "ткань",    "capacity": 4.0,  "affinity": {"air": 1.3, "mind": 1.1}},
+    "obsidian": {"name_ru": "обсидиан", "capacity": 7.0,  "affinity": {"dark": 1.3, "fire": 1.2}, "stability": 0.9},
+    "crystal":  {"name_ru": "кристалл", "capacity": 10.0, "affinity": {"_all": 1.1}, "stability": 0.9}
+  },
+  "triggers": {
+    "on_hit":  {"name_ru": "при ударе",        "target": "target"},
+    "on_use":  {"name_ru": "при применении",   "target": null},
+    "on_wear": {"name_ru": "пока надето",      "target": "self"},
+    "on_hurt": {"name_ru": "когда ранен носитель", "target": "caster_area"}
+  }
+}

@@ -9,3 +9,6 @@ data/save/
 
 # Experiment outputs
 experiments/*.png
+
+# Generated reports
+reports/

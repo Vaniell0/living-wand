@@ -1,0 +1,35 @@
+{
+  "_doc": "Alchemy on the magic substrate: an ingredient is a small fixed rune subgraph (its 'nature'). Brewing mixes ingredient natures with MUTUAL edges, process steps add runes/edges, the flask is the vessel. The result compiles through the same algebra into a SpellProgram (delivery 'consume' or 'splash').",
+  "ingredients": {
+    "fire_salt":      {"name_ru": "огненная соль",   "runes": ["fire", "matter"],  "edges": [[0, 1, "MUTUAL"]]},
+    "river_silt":     {"name_ru": "речной ил",       "runes": ["water", "earth"],  "edges": [[0, 1, "MUTUAL"]]},
+    "sunpetal":       {"name_ru": "солнечник",       "runes": ["light", "life"],   "edges": [[0, 1, "MUTUAL"]]},
+    "night_mold":     {"name_ru": "ночная плесень",  "runes": ["dark", "life"],    "edges": [[0, 1, "MUTUAL"]]},
+    "quartz":         {"name_ru": "кварц",           "runes": ["earth", "light"],  "edges": [[0, 1, "MUTUAL"]]},
+    "griffin_feather":{"name_ru": "перо грифона",    "runes": ["air", "space"],    "edges": [[0, 1, "DIRECT"]]},
+    "quicksilver":    {"name_ru": "ртуть",           "runes": ["water", "matter"], "edges": [[0, 1, "MUTUAL"]]},
+    "hourglass_sand": {"name_ru": "песок часов",     "runes": ["time", "earth"],   "edges": [[1, 0, "DIRECT"]]},
+    "heartroot":      {"name_ru": "сердечный корень","runes": ["body", "life"],    "edges": [[0, 1, "MUTUAL"]]},
+    "dream_pollen":   {"name_ru": "пыльца сна",      "runes": ["mind", "air"],     "edges": [[1, 0, "DIRECT"]]},
+    "sulfur":         {"name_ru": "сера",            "runes": ["fire", "dark"],    "edges": [[0, 1, "MUTUAL"]]},
+    "dew":            {"name_ru": "утренняя роса",   "runes": ["water", "light"],  "edges": [[0, 1, "MUTUAL"]]},
+    "iron_filings":   {"name_ru": "железные опилки", "runes": ["earth", "weaken"], "edges": [[1, 0, "DIRECT"]]},
+    "amber":          {"name_ru": "янтарь",          "runes": ["time", "hold"],    "edges": [[1, 0, "DIRECT"]]},
+    "ash":            {"name_ru": "пепел",           "runes": ["fire", "earth"],   "edges": [[0, 1, "NEGATE"]]}
+  },
+  "steps": {
+    "_doc": "Each step adds runes wired into the mixture's strongest core rune.",
+    "heat":    {"name_ru": "нагреть",      "add": ["fire"],           "edge": "DIRECT"},
+    "cool":    {"name_ru": "остудить",     "add": ["weaken"],         "edge": "DIRECT"},
+    "grind":   {"name_ru": "растереть",    "add": ["point"],          "edge": "DIRECT"},
+    "steep":   {"name_ru": "настоять",     "add": ["hold", "time"],   "edge": "DIRECT"},
+    "distill": {"name_ru": "перегнать",    "add": ["air"],            "edge": "LIMIT"},
+    "ferment": {"name_ru": "дать перебродить", "add": ["life"],       "edge": "ITERATE"},
+    "charge":  {"name_ru": "зарядить",     "add": ["amplify"],        "edge": "DIRECT"}
+  },
+  "flasks": {
+    "clay":    {"name_ru": "глиняный горшок", "capacity": 6.0},
+    "glass":   {"name_ru": "стеклянная колба", "capacity": 8.0},
+    "crystal": {"name_ru": "хрустальный фиал", "capacity": 11.0}
+  }
+}

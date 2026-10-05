@@ -357,6 +357,7 @@ class WandSession:
         if self.vision is None:
             return None
         program = self.cast(graph, record=False).program
+        self.lexicon.observe(program, waking=False)   # the dream is a safe lab
         result = DreamWeaver(self.lexicon, self._dream_eval).attempt(self.vision, program)
         if result.solved:
             from .combo_data import match_cast

@@ -330,11 +330,13 @@ class AdaptiveOCR:
     def _anchor_set(self) -> tuple[np.ndarray, np.ndarray]:
         """Synthetic samples replayed on every fine-tune (anti-forgetting)."""
         if self._anchors is None:
-            from .synth_data import generate_sample
+            # same renderer as the game and as training (sketch.render_strokes)
+            from .synth_data import generate_stroke_sample
+            rng = np.random.default_rng(0)
             imgs, labels = [], []
             for label in range(NUM_SYMBOLS):
                 for _ in range(self.anchors_per_class):
-                    imgs.append(generate_sample(label))
+                    imgs.append(generate_stroke_sample(label, rng))
                     labels.append(label)
             self._anchors = (np.array(imgs), np.array(labels))
         return self._anchors

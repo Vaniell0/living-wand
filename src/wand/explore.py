@@ -38,7 +38,7 @@ from .checker import check_graph
 RUNE_NAMES = list(RUNES)
 EDGE_NAMES = [e.name for e in EdgeType]
 VERB_NAMES = sorted(load_verbs()["verbs"])
-DELIVERY_KINDS = ["instant", "projectile", "beam", "zone", "aura", "touch"]
+DELIVERY_KINDS = ["instant", "projectile", "beam", "zone", "aura", "touch", "consume", "splash", "imbue"]
 
 
 # ═══════════════════════════════════════════

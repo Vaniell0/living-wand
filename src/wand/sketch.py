@@ -237,7 +237,7 @@ class SketchConfig:
     gap_rel: float = 0.25              # … or closer than gap_rel × stroke size
     gap_rel_consecutive: float = 0.6   # looser for strokes drawn back-to-back
     overlap_merge: float = 0.3         # bbox overlap / smaller area
-    connector_min_len: float = 60.0
+    connector_min_len: float = 40.0
     connector_straightness: float = 0.88
     connector_snap: float = 28.0       # endpoint → glyph bbox distance
     accept_conf: float = 0.35          # below this a glyph is ignored
@@ -263,15 +263,17 @@ class SketchParser:
         self,
         strokes: Sequence[Sequence[Point]],
         circle_closed: bool = True,
-        overrides: dict[int, str] | None = None,
-        edge_overrides: dict[tuple[int, int], EdgeType] | None = None,
+        overrides: dict | None = None,
+        edge_overrides: dict | None = None,
         auto_wire: bool = True,
         leniency: Callable[[str], float] | None = None,
     ) -> SketchResult:
         """Full parse.
 
-        overrides: glyph index → label chosen by the player (trusted).
-        edge_overrides: (src glyph, dst glyph) → edge type set by the player.
+        overrides: label chosen by the player (trusted), keyed by glyph index
+            or by frozenset of the glyph's stroke ids (stable while drawing).
+        edge_overrides: edge type set by the player, keyed by (src, dst) glyph
+            indices or by (frozenset, frozenset) of stroke ids.
         leniency: rune → [0, 1] familiarity; familiar runes are accepted and
             trusted at lower confidence (the wand knows your handwriting).
         """
@@ -280,26 +282,29 @@ class SketchParser:
 
         for i, g in enumerate(glyphs):
             self._recognize(g, leniency)
-            if overrides and i in overrides:
-                g.label, g.confidence = overrides[i], 1.0
-                g.uncertain, g.confirmed = False, True
+            if overrides:
+                label = overrides.get(i, overrides.get(frozenset(g.stroke_ids)))
+                if label is not None:
+                    g.label, g.confidence = label, 1.0
+                    g.uncertain, g.confirmed = False, True
+
+        def edge_override(e: DrawnEdge) -> EdgeType | None:
+            if not edge_overrides:
+                return None
+            key_sets = (frozenset(glyphs[e.src].stroke_ids), frozenset(glyphs[e.dst].stroke_ids))
+            return edge_overrides.get((e.src, e.dst), edge_overrides.get(key_sets))
 
         edges = self._connector_edges(connectors, strokes, glyphs)
-        if edge_overrides:
-            for e in edges:
-                key = (e.src, e.dst)
-                if key in edge_overrides:
-                    e.edge_type = edge_overrides[key]
+        for e in edges:
+            e.edge_type = edge_override(e) or e.edge_type
 
         accepted = [i for i, g in enumerate(glyphs) if g.is_rune]
         ignored = [i for i, g in enumerate(glyphs) if not g.is_rune]
         drawn = [e for e in edges if e.src in accepted and e.dst in accepted]
         if not drawn and auto_wire:
             drawn = auto_wire_edges(glyphs, accepted, self.cfg.mutual_rel_dist)
-            if edge_overrides:
-                for e in drawn:
-                    if (e.src, e.dst) in edge_overrides:
-                        e.edge_type = edge_overrides[(e.src, e.dst)]
+            for e in drawn:
+                e.edge_type = edge_override(e) or e.edge_type
 
         graph = SpellGraph(circle_closed=circle_closed)
         for i in accepted:
@@ -313,23 +318,42 @@ class SketchParser:
         return SketchResult(glyphs, drawn, graph, clarity, uncertain, ignored)
 
     def segment(self, strokes: Sequence[Sequence[Point]]) -> tuple[list[list[int]], list[int]]:
-        """Split strokes into glyph clusters and connector stroke ids."""
+        """Split strokes into glyph clusters and connector stroke ids.
+
+        A connector is long, straight, does not cross any glyph stroke (the
+        crossbar of `target`, `through`, `dispel` or `all` crosses its own
+        rune), and its two ends land on two different glyphs. Rejected
+        candidates rejoin the glyph strokes and the check repeats until
+        nothing changes.
+        """
         valid = [i for i, s in enumerate(strokes) if len(s) > 0]
         candidates = [i for i in valid if self._is_connector_candidate(strokes[i])]
         glyph_ids = [i for i in valid if i not in candidates]
 
-        clusters = self._cluster(glyph_ids, strokes)
-        connectors: list[int] = []
-        rejected: list[int] = []
-        for ci in candidates:
-            ends = self._endpoint_glyphs(strokes[ci], clusters, strokes)
-            if ends is not None:
-                connectors.append(ci)
-            else:
-                rejected.append(ci)
-        if rejected:
-            clusters = self._cluster(sorted(glyph_ids + rejected), strokes)
-        return clusters, connectors
+        crossing = [ci for ci in candidates if self._crosses(strokes[ci], glyph_ids, strokes)]
+        connectors = [ci for ci in candidates if ci not in crossing]
+        glyph_ids = sorted(glyph_ids + crossing)
+
+        while True:
+            clusters = self._cluster(glyph_ids, strokes)
+            rejected = [ci for ci in connectors
+                        if self._endpoint_glyphs(strokes[ci], clusters, strokes) is None]
+            if not rejected:
+                return clusters, connectors
+            connectors = [ci for ci in connectors if ci not in rejected]
+            glyph_ids = sorted(glyph_ids + rejected)
+
+    def _crosses(self, stroke, glyph_ids: list[int], strokes) -> bool:
+        """Does the middle of this stroke run over another (glyph) stroke?"""
+        p = _resample(stroke, 3.0)
+        if len(p) < 6:
+            return False
+        cut = max(len(p) // 6, 1)
+        middle = p[cut:-cut]
+        for gi in glyph_ids:
+            if _min_dist(middle, _resample(strokes[gi], 3.0)) < 4.0:
+                return True
+        return False
 
     # ── internals ──
 
@@ -362,6 +386,15 @@ class SketchParser:
                 rel = cfg.gap_rel_consecutive if consecutive else cfg.gap_rel
                 gap = max(cfg.gap_abs, rel * max(sizes[a], sizes[b]))
                 linked = _min_dist(pts[a], pts[b]) < gap
+                if not linked:
+                    # a small mark inside a bigger stroke's frame belongs to it
+                    # (the dot of `life`/`here`/`there`, the head of `self`)
+                    small, big = (a, b) if sizes[a] < sizes[b] else (b, a)
+                    sx0, sy0, sx1, sy1 = boxes[small]
+                    bx0_, by0_, bx1_, by1_ = boxes[big]
+                    scx, scy = (sx0 + sx1) / 2, (sy0 + sy1) / 2
+                    linked = (sizes[small] < 0.5 * sizes[big]
+                              and bx0_ < scx < bx1_ and by0_ < scy < by1_)
                 if not linked:
                     ax0, ay0, ax1, ay1 = boxes[a]
                     bx0, by0, bx1, by1 = boxes[b]

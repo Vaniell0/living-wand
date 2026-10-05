@@ -50,10 +50,15 @@ VERB_RU = {
 DELIVERY_RU = {
     "projectile": "летит к цели", "beam": "тянется лучом", "zone": "ложится на место",
     "aura": "окутывает", "touch": "касается", "instant": "вспыхивает разом",
+    "consume": "выпивается", "splash": "разбивается брызгами", "imbue": "дремлет в предмете",
 }
 TARGET_RU = {
     "self": "тебя самого", "target": "кого-то вдали", "point": "точку вдали",
     "caster_area": "всё вокруг тебя",
+}
+STATUS_RU = {
+    "burning": "горение", "poisoned": "отравление", "frozen": "оцепенение", "feared": "страх",
+    "confused": "смятение", "asleep": "сон", "blinded": "слепота",
 }
 FIELD_RU = {
     "heat": ("жар", "холод"), "moisture": ("влага", "сухость"), "motion": ("напор", "затишье"),
@@ -142,11 +147,12 @@ class Lexicon:
         runes = list(runes)
         return sum(r in self.known for r in runes) / len(runes) if runes else 1.0
 
-    def observe(self, program: SpellProgram) -> list[str]:
+    def observe(self, program: SpellProgram, waking: bool = True) -> list[str]:
         """Record what a cast did against every rune in it.
 
         Unknown runes met three times in waking casts are learned the hard
-        way. Returns runes learned by this observation.
+        way (dream casts sharpen the notes but teach no words — the vision
+        does). Returns runes learned by this observation.
         """
         learned = []
         for rune in set(program.runes):
@@ -156,7 +162,7 @@ class Lexicon:
                 note.fields[f.property] += f.delta
             for op in program.ops[:2]:
                 note.verbs[op.verb] += 1
-            if rune not in self.known:
+            if waking and rune not in self.known:
                 self.encounters[rune] += 1
                 if self.encounters[rune] >= 3 and self.learn(rune):
                     learned.append(rune)

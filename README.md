@@ -15,14 +15,17 @@ You draw runes. OCR converts the drawing to a spell graph — nodes (runes), edg
 SpellFormer — a 4-layer Transformer encoder, ~738K parameters, <15ms on CPU — reads the token sequence and predicts a 38-dimensional effect vector: six affinity poles, power, stability, element intensities, domain intensities, a 16D semantic embedding.
 
 ```
-Drawing
-  → OCR          (SymbolNet: CoordConv + SE + multi-scale, 31 rune classes)
-  → SpellGraph   (algebra.py: nodes, edge types, circle flag)
-  → Tokenizer    (graph → sequence ≤64 tokens, role + degree embeddings)
+Strokes
+  → Sketch       (sketch.py: glyph clustering, drawn links, grammar wiring — one renderer for train & play)
+  → OCR          (SymbolNet trained on stroke-rendered runes; uncertain glyphs flagged, player confirms)
+  → SpellGraph   (algebra.py: nodes, edge types, circle — evaluated in fixed operator precedence)
+  → Tokenizer    (canonical graph → sequence ≤64 tokens, role + degree embeddings)
   → SpellFormer  (4-layer encoder, attention pooling, 38D output)
-  → WandAdapter  (per-player drift: 6 isolated per-pole heads, XP banks)
-  → Effect       (38D → readable effect, tags, semantic neighbours)
-  → Grimoire     (SQLite: casts, recipes, discoveries)
+  → WandAdapter  (per-player drift, identity when fresh; XP from engine outcomes)
+  → SpellProgram (actions.py: target · delivery · shape · property fields · verb ops · timeline ·
+                  visual spec · backfire risk — engine-agnostic JSON, served by tools/serve.py)
+  → Engine       (vfx.py is the reference consumer; Godot/Unity talk to the HTTP/stdio API)
+  ← Outcome      (what really happened → wand experience, lexicon notes)
 ```
 
 The model is trained on algebraically generated data (`algebra.py` + `datagen.py`). The algebra defines the physics of the world — synergy pairs, cancel pairs, element interactions — and generates the ground truth. The model learns to approximate it. Because it is a statistical model and not a lookup table:
@@ -69,6 +72,7 @@ XP banks are permanent. The wand accumulates a biography.
 | v0.7 | AdaptiveOCR, all 30 runes, Grimoire, autosave |
 | v0.8 | SymbolNet replaces SymbolCNN (CoordConv + SE + multi-scale + BatchNorm, 81.7% on 31 classes) |
 | v0.9 | Particle and colour effects per element/domain/tag |
+| **v1.0** | **Magic 2.0** — see [`docs/magic-2.md`](docs/magic-2.md): stroke pipeline (OCR 56.9% → 96.2% on human-like drawings, label flips 35.9% → 3.7%), SpellProgram API with property fields, world context, circle-as-vessel, wand signatures, dreams & lexicon, alchemy & enchanting on the same substrate, explorer / automated playtesting, new VFX |
 
 `src/wand/model.py` and `pipeline.py` are the v0.1–v0.5 baseline — fully validated across six experiments, preserved as reference. Active development uses `pipeline_v2.py` and `transformer.py`.
 
@@ -77,19 +81,18 @@ XP banks are permanent. The wand accumulates a biography.
 ## Running
 
 ```bash
-# text REPL — explore spells without drawing
-python sandbox.py
+python tools/train_ocr.py        # rune reader → data/ocr_symbolnet_v2.pt (game trains a smaller one on first run)
+python train.py                  # retrain SpellFormer (the algebra changed in v1.0)
 
-# pygame prototype — draw runes, cast, see effects
-python game.py
-
-# retrain SpellFormer
-python train.py
+python game.py                   # draw, cast, dream (D), lexicon (Tab), world (E)
+python sandbox.py                # text REPL: cast · dream/try/hint · brew · enchant · world · explore
+python tools/serve.py            # engine API on :7777 (or --stdio)
+python tools/explore.py --check  # automated playtest: balance report + invariants
+python tools/ocr_bench.py --model data/ocr_symbolnet_v2.pt   # OCR on human-like drawings
+python -m pytest tests
 ```
 
-**Sandbox commands** — `add fire`, `link fire air mutual`, `circle closed`, `cast`, `wand`, `sleep` (wand dreams on recent casts), `crystal`, `tags`, `grimoire`, `save`, `quit`.
-
-**Dependencies**: Python 3.11+, PyTorch, pygame, numpy. No GPU required for inference.
+**Dependencies**: Python 3.11+, PyTorch, pygame-ce, numpy (matplotlib for reports). No GPU required.
 
 ---
 
@@ -104,4 +107,10 @@ python train.py
 | See how crystallization works | `src/wand/crystal.py` |
 | Read the magic lore and world canon | `world/00_index.md` |
 | Track the roadmap and design intent | `living-wand.md` (Obsidian) |
+| Read the v1.0 design (ideas, diagnosis, roadmap — Russian) | `docs/magic-2.md` |
+| See what an engine receives | `src/wand/actions.py`, `GET /schema` |
+| Turn strokes into a spell graph | `src/wand/sketch.py` |
+| See how the player learns runes in dreams | `src/wand/dream.py` |
+| Brew potions / enchant items on the same algebra | `src/wand/craft.py` |
+| Stress-test the balance with agents | `src/wand/explore.py`, `tools/explore.py` |
 | See the v0.1–v0.5 experiment history | `experiments/` |
