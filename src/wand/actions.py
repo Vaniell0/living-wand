@@ -460,17 +460,32 @@ def compile_program(
         mm = re.search(r"→\s*(\w+)", syn)
         if mm:
             tag_weights[mm.group(1)] = tag_weights.get(mm.group(1), 0.0) + 1.0
+    rule_weights = dict(tag_weights)
     if has_model and authority != "algebra":
         w_model = 1.0 if authority == "model" else 0.5
         for name, sim in getattr(m, "tags", [])[:4]:
             if sim > 0.3:
                 tag_weights[name] = tag_weights.get(name, 0.0) + w_model * float(sim)
 
-    scored = _score_verbs(channels, tag_weights, verbs_cfg)
     intent_w = verbs_cfg["intent"]["weights"][intent]
-    for verb, info in scored.items():
-        info["score"] *= intent_w[_verb_class(verb, verbs_cfg)]
-    ranked = sorted(scored.items(), key=lambda kv: (-kv[1]["score"], kv[0]))
+
+    def ranked_verbs(weights):
+        sc = _score_verbs(channels, weights, verbs_cfg)
+        for verb, info in sc.items():
+            info["score"] *= intent_w[_verb_class(verb, verbs_cfg)]
+        return sorted(sc.items(), key=lambda kv: (-kv[1]["score"], kv[0]))
+
+    ranked = ranked_verbs(tag_weights)
+    if authority == "blend" and ranked:
+        # structure from rules: the main verb is the graph's; the model only
+        # re-orders and re-weights the secondary ones
+        rule_primary = ranked_verbs(rule_weights)[0][0] if channels or rule_weights else None
+        if rule_primary and ranked[0][0] != rule_primary:
+            idx = next((i for i, (v, _) in enumerate(ranked) if v == rule_primary), None)
+            if idx is not None:
+                item = ranked.pop(idx)
+                item[1]["score"] = max(item[1]["score"], ranked[0][1]["score"] * 1.01)
+                ranked.insert(0, item)
     total = sum(max(v["score"], 0.0) for _, v in ranked) or 1.0
     dominant_channel = max(channels, key=lambda c: abs(channels[c])) if channels else "arcane"
     triggers = _node_triggers(graph)

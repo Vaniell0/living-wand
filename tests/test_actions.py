@@ -61,3 +61,17 @@ def test_outcomes_teach_less_when_repeated():
     first, tenth = outcome_to_event(p, o, 0), outcome_to_event(p, o, 9)
     assert tenth.weight < first.weight
     assert first.pole_affinity[0] == 1.0  # fire → ELEMENT pole
+
+
+def test_model_cannot_change_the_main_verb_in_blend():
+    from types import SimpleNamespace
+    g = build_fireball()
+    # a model that strongly believes the fireball is about healing
+    m = SimpleNamespace(power=0.3, stability=0.9, area=1.0, duration=1.0,
+                        tags=[("healing", 0.99), ("regeneration", 0.95), ("blessing", 0.9)],
+                        palette=[((255, 120, 30), 1.0)], dominant_color=(255, 120, 30),
+                        aura_color=(255, 200, 120), title="?", description="?")
+    blend = compile_program(g, evaluate_spell(g), m, authority="blend")
+    model = compile_program(g, evaluate_spell(g), m, authority="model")
+    assert blend.primary_verb == "damage"
+    assert model.primary_verb == "heal"
