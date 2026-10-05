@@ -1,0 +1,397 @@
+{
+  "_doc": "Engine verb vocabulary for SpellProgram ops (src/wand/actions.py). Verbs are generic game actions, not magic-specific: a cooking or crafting pack reuses the same verbs with its own tag patterns. 'patterns' are regexes matched against algebra tags and the model's semantic tags; each hit adds `weight` to the verb's score. 'channel_defaults' give every element/domain a baseline verb so any spell compiles to something. 'invert' says what a negated channel does instead.",
+  "verbs": {
+    "damage": {
+      "desc": "reduce target health",
+      "over_time_status": true
+    },
+    "heal": {
+      "desc": "restore target health"
+    },
+    "shield": {
+      "desc": "absorb incoming damage / spawn barrier"
+    },
+    "status": {
+      "desc": "apply a named status effect (frozen, feared, blinded…)"
+    },
+    "push": {
+      "desc": "knock back / displace away from origin"
+    },
+    "pull": {
+      "desc": "draw toward origin / root in place"
+    },
+    "move": {
+      "desc": "relocate target (teleport, levitate, phase)"
+    },
+    "timescale": {
+      "desc": "change the target's local time rate (factor param)"
+    },
+    "light": {
+      "desc": "emit light, reveal, illuminate"
+    },
+    "obscure": {
+      "desc": "darkness, fog, invisibility — reduce visibility"
+    },
+    "transform": {
+      "desc": "change material / shape / size of target"
+    },
+    "grow": {
+      "desc": "accelerate or spawn living matter"
+    },
+    "temperature": {
+      "desc": "heat (delta > 0) or cool (delta < 0) target or area"
+    },
+    "cleanse": {
+      "desc": "remove dirt, poison or negative statuses"
+    },
+    "dispel": {
+      "desc": "cancel or suppress other spells / magic"
+    },
+    "reveal": {
+      "desc": "information: scry, detect, foresee, diagnose"
+    },
+    "communicate": {
+      "desc": "carry a message / signal between minds or places"
+    }
+  },
+  "patterns": [
+    {
+      "verb": "damage",
+      "weight": 1.0,
+      "status": "burning",
+      "re": "burn|flame|fire|lava|magma|hellfire|infernal|scald|plasma|ember|cremat|solar_flare|wildfire|eruption|volcan"
+    },
+    {
+      "verb": "damage",
+      "weight": 1.0,
+      "status": "poisoned",
+      "re": "poison|plague|toxic|acid|corros|necro|decay|parasite|disintegrat|entropy|abyss|drown"
+    },
+    {
+      "verb": "damage",
+      "weight": 0.9,
+      "re": "attack|cutting|explosion|storm|lightning|flash|quake|disruption|rage|vampir|choking|suffoc|drown|void"
+    },
+    {
+      "verb": "heal",
+      "weight": 1.0,
+      "re": "heal|regener|restor|rejuven|vitality|nurture|cure|resurrect|rebirth|reincarn|phoenix|blessing|full_healing|warmth_of_life|vitamin|hydration"
+    },
+    {
+      "verb": "shield",
+      "weight": 1.0,
+      "re": "shield|wall|fortress|armor|barrier|defen|foundation|hardening|toughness|solid|shelter|living_armor|firewall"
+    },
+    {
+      "verb": "status",
+      "weight": 0.9,
+      "status": "frozen",
+      "re": "freez|ice|frozen|cold_front|ice_age|numb|petrif"
+    },
+    {
+      "verb": "status",
+      "weight": 0.9,
+      "status": "feared",
+      "re": "fear|nightmare|madness|panic|death_whisper|terror"
+    },
+    {
+      "verb": "status",
+      "weight": 0.8,
+      "status": "confused",
+      "re": "illusion|mirage|confus|amnesia|deja_vu|hologram|phantom|possession"
+    },
+    {
+      "verb": "status",
+      "weight": 0.8,
+      "status": "asleep",
+      "re": "sleep|dream|calm|meditation|^rest$|silence"
+    },
+    {
+      "verb": "move",
+      "weight": 1.0,
+      "re": "teleport|portal|phasing|flight|levitat|migration|dimension|tunnel|astral|dream_travel|time_travel|pocket"
+    },
+    {
+      "verb": "push",
+      "weight": 0.8,
+      "re": "gust|wind|tide|current|flood|geyser|pressure|pneumatic|sandstorm|dust_devil|monsoon|spreading"
+    },
+    {
+      "verb": "pull",
+      "weight": 0.9,
+      "re": "vacuum|black_hole|sinkhole|quicksand|bind|imprison|tar_pit|roots|gravity|grounding|bog|swamp"
+    },
+    {
+      "verb": "timescale",
+      "weight": 1.0,
+      "factor": 0.0,
+      "re": "stasis|time_lock|suspended|timeless|eternal|permanent|preserv"
+    },
+    {
+      "verb": "timescale",
+      "weight": 0.9,
+      "factor": 0.5,
+      "re": "slow|patience|aging|weathering|sediment|slow_drip"
+    },
+    {
+      "verb": "timescale",
+      "weight": 0.9,
+      "factor": 1.6,
+      "re": "haste|speed|reflex|flow_state|temporal_flow|river_of_time|wind_speed"
+    },
+    {
+      "verb": "light",
+      "weight": 0.9,
+      "re": "light|illumin|beacon|lighthouse|radiance|halo|glow|dawn|sun_|solar|aurora|brillian|corona|bioluminescence"
+    },
+    {
+      "verb": "obscure",
+      "weight": 0.9,
+      "re": "dark|shadow|eclipse|night|invisib|obscur|fog|smoke|mist|smog|ash_cloud|twilight"
+    },
+    {
+      "verb": "transform",
+      "weight": 0.9,
+      "re": "shap|sculpt|forg|smelt|pottery|ceramic|clay|construct|building|architect|transmut|mutation|shapeshift|size_change|tempering|rust|crystal|gem|glass|stretching|animation|golem"
+    },
+    {
+      "verb": "grow",
+      "weight": 1.0,
+      "re": "grow|garden|fertil|bloom|seed|photosynth|harvest|compost|pollen|ecosystem|habitat|evolution|spring|oasis"
+    },
+    {
+      "verb": "temperature",
+      "weight": 0.8,
+      "delta": 1.0,
+      "re": "warm|thermal|sauna|hot_spring|heat|fever|sweat|cooking|boil"
+    },
+    {
+      "verb": "temperature",
+      "weight": 0.8,
+      "delta": -1.0,
+      "re": "cool|chill|frost|cold"
+    },
+    {
+      "verb": "cleanse",
+      "weight": 0.9,
+      "re": "clean|wash|purif|bath|baptism|bleach|fresh_air|cleansing"
+    },
+    {
+      "verb": "dispel",
+      "weight": 1.2,
+      "re": "dispel|purge|null_zone|anti_magic|suppress|seal|magic_dead|freeze_magic|forced_dispel"
+    },
+    {
+      "verb": "reveal",
+      "weight": 0.9,
+      "re": "clairvoy|foresight|prophecy|remote_view|reveal|truth|clarity|eagle_sight|diagnos|hindsight|panorama|echo|compass|pathfind|mapping"
+    },
+    {
+      "verb": "communicate",
+      "weight": 1.0,
+      "re": "telepath|whisper|message|signal|rumor|thought_messenger|animal_speech|hive_mind|translat"
+    }
+  ],
+  "channel_defaults": {
+    "_doc": "Every channel votes for several verbs; intent (from the reference rune) then reweights harmful vs helpful vs utility verbs.",
+    "fire": [
+      {
+        "verb": "damage",
+        "w": 1.0,
+        "status": "burning"
+      },
+      {
+        "verb": "temperature",
+        "w": 0.7,
+        "delta": 1.0
+      },
+      {
+        "verb": "light",
+        "w": 0.4
+      }
+    ],
+    "water": [
+      {
+        "verb": "push",
+        "w": 0.6
+      },
+      {
+        "verb": "cleanse",
+        "w": 0.5
+      },
+      {
+        "verb": "temperature",
+        "w": 0.4,
+        "delta": -1.0
+      },
+      {
+        "verb": "heal",
+        "w": 0.2
+      }
+    ],
+    "air": [
+      {
+        "verb": "push",
+        "w": 0.8
+      },
+      {
+        "verb": "communicate",
+        "w": 0.2
+      }
+    ],
+    "earth": [
+      {
+        "verb": "shield",
+        "w": 0.8
+      },
+      {
+        "verb": "transform",
+        "w": 0.4
+      }
+    ],
+    "light": [
+      {
+        "verb": "light",
+        "w": 1.0
+      },
+      {
+        "verb": "reveal",
+        "w": 0.4
+      },
+      {
+        "verb": "heal",
+        "w": 0.2
+      }
+    ],
+    "dark": [
+      {
+        "verb": "obscure",
+        "w": 1.0
+      },
+      {
+        "verb": "damage",
+        "w": 0.4,
+        "status": "blinded"
+      }
+    ],
+    "body": [
+      {
+        "verb": "heal",
+        "w": 0.8
+      },
+      {
+        "verb": "transform",
+        "w": 0.2
+      }
+    ],
+    "mind": [
+      {
+        "verb": "status",
+        "w": 0.6,
+        "status": "confused"
+      },
+      {
+        "verb": "communicate",
+        "w": 0.4
+      },
+      {
+        "verb": "reveal",
+        "w": 0.3
+      }
+    ],
+    "matter": [
+      {
+        "verb": "transform",
+        "w": 1.0
+      }
+    ],
+    "space": [
+      {
+        "verb": "move",
+        "w": 0.8
+      },
+      {
+        "verb": "pull",
+        "w": 0.2
+      }
+    ],
+    "time": [
+      {
+        "verb": "timescale",
+        "w": 1.0,
+        "factor": 0.5
+      }
+    ],
+    "life": [
+      {
+        "verb": "heal",
+        "w": 0.8
+      },
+      {
+        "verb": "grow",
+        "w": 0.5
+      }
+    ]
+  },
+  "invert": {
+    "damage": "heal",
+    "heal": "damage",
+    "shield": "dispel",
+    "light": "obscure",
+    "obscure": "light",
+    "push": "pull",
+    "pull": "push",
+    "grow": "damage",
+    "cleanse": "status"
+  },
+  "intent": {
+    "_doc": "Verb class multipliers per intent. Intent comes from the reference rune: target/there or outward/through = hostile, self = support, here = environment. No reference = neutral.",
+    "classes": {
+      "harmful": [
+        "damage",
+        "status",
+        "push",
+        "pull"
+      ],
+      "supportive": [
+        "heal",
+        "shield",
+        "cleanse",
+        "grow"
+      ],
+      "utility": [
+        "light",
+        "obscure",
+        "temperature",
+        "transform",
+        "reveal",
+        "communicate",
+        "move",
+        "timescale",
+        "dispel"
+      ]
+    },
+    "weights": {
+      "hostile": {
+        "harmful": 1.25,
+        "supportive": 0.6,
+        "utility": 0.9
+      },
+      "support": {
+        "harmful": 0.3,
+        "supportive": 1.4,
+        "utility": 1.0
+      },
+      "environment": {
+        "harmful": 0.45,
+        "supportive": 1.0,
+        "utility": 1.3
+      },
+      "neutral": {
+        "harmful": 1.0,
+        "supportive": 1.0,
+        "utility": 1.0
+      }
+    }
+  }
+}

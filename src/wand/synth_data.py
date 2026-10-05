@@ -63,9 +63,50 @@ def _jitter(x: float, y: float, amount: float = 2.0) -> tuple[float, float]:
     )
 
 
+class StrokeRecorder:
+    """Drop-in for the 64×64 canvas that records geometry instead of pixels.
+
+    Every draw_* function below draws through _draw_line (or writes dot
+    pixels directly), so passing a StrokeRecorder turns all 30 rune painters
+    into stroke generators for free. Consecutive segments are merged into
+    polylines; direct pixel writes (dots) become one dot stroke.
+    """
+
+    shape = (IMG_SIZE, IMG_SIZE)
+
+    def __init__(self):
+        self.polylines: list[list[tuple[float, float]]] = []
+        self._dot_pixels: list[tuple[int, int]] = []
+
+    def add_segment(self, x0: float, y0: float, x1: float, y1: float):
+        if self.polylines:
+            lx, ly = self.polylines[-1][-1]
+            if abs(lx - x0) < 1e-3 and abs(ly - y0) < 1e-3:
+                self.polylines[-1].append((x1, y1))
+                return
+        self.polylines.append([(x0, y0), (x1, y1)])
+
+    def __setitem__(self, key, value):
+        py, px = key
+        self._dot_pixels.append((px, py))
+
+    def __getitem__(self, key):
+        return 0.0
+
+    def strokes(self) -> list[list[tuple[float, float]]]:
+        out = [list(p) for p in self.polylines]
+        if self._dot_pixels:
+            xs, ys = zip(*self._dot_pixels)
+            out.append([(float(np.mean(xs)), float(np.mean(ys)))])
+        return out
+
+
 def _draw_line(img: np.ndarray, x0: float, y0: float, x1: float, y1: float,
                thickness: int = 2, jitter: float = 1.5):
     """Draw a line with hand-drawn jitter using Bresenham-like approach."""
+    if isinstance(img, StrokeRecorder):
+        img.add_segment(x0, y0, x1, y1)
+        return
     n_points = max(int(math.hypot(x1 - x0, y1 - y0)), 2)
     for i in range(n_points + 1):
         t = i / n_points
@@ -751,3 +792,112 @@ def generate_circle(closed: bool = True, jitter: float = 2.0) -> np.ndarray:
 
     img = np.clip(img, 0.0, 1.0)
     return img
+
+
+# ═══════════════════════════════════════════
+# Stroke-based dataset (shared renderer with inference)
+# ═══════════════════════════════════════════
+
+def generate_strokes(label: int) -> list[list[tuple[float, float]]]:
+    """Clean polylines (64-px space) for one random instance of a symbol."""
+    rec = StrokeRecorder()
+    DRAW_FUNCTIONS[label](rec)
+    return rec.strokes()
+
+
+def augment_strokes(strokes, rng: np.random.Generator, strength: float = 1.0,
+                    irregular_sampling: bool = False):
+    """Make clean polylines look hand-drawn with a mouse or pen.
+
+    Smooth, low-frequency deformation instead of per-pixel noise: small
+    rotation/shear/anisotropic scale, a sinusoidal warp field, endpoint
+    over/undershoot and a correlated tremor along each stroke.
+    Rotation stays small on purpose — up/down, inward/outward and
+    fire/weaken differ only by orientation.
+    """
+    pts = [np.asarray(s, dtype=np.float32).reshape(-1, 2) for s in strokes if len(s)]
+    if not pts:
+        return []
+    allp = np.concatenate(pts)
+    center = (allp.min(0) + allp.max(0)) / 2.0
+    size = float(max(np.ptp(allp, axis=0).max(), 4.0))
+
+    rot = rng.normal(0, 0.12 * strength)
+    shear = rng.normal(0, 0.10 * strength)
+    sx, sy = rng.uniform(1 - 0.15 * strength, 1 + 0.15 * strength, size=2)
+    c, s_ = math.cos(rot), math.sin(rot)
+    A = np.array([[c, -s_], [s_, c]], dtype=np.float32) @ np.array(
+        [[sx, shear], [0, sy]], dtype=np.float32)
+
+    n_waves = 3
+    amp = rng.uniform(0, 0.045 * size * strength, size=(n_waves, 2))
+    freq = rng.uniform(0.5, 2.0, size=(n_waves, 2)) * (2 * math.pi / size)
+    phase = rng.uniform(0, 2 * math.pi, size=(n_waves, 2))
+
+    def warp(p: np.ndarray) -> np.ndarray:
+        d = np.zeros_like(p)
+        for k in range(n_waves):
+            d[:, 0] += amp[k, 0] * np.sin(freq[k, 0] * p[:, 1] + phase[k, 0])
+            d[:, 1] += amp[k, 1] * np.sin(freq[k, 1] * p[:, 0] + phase[k, 1])
+        return d
+
+    out = []
+    for p in pts:
+        if len(p) == 1:
+            q = (p - center) @ A.T + center
+            out.append([tuple(map(float, q[0]))])
+            continue
+        # over/undershoot at both ends
+        ext = rng.normal(0, 0.04 * strength, size=2)
+        p = p.copy()
+        p[0] = p[0] + (p[0] - p[1]) * ext[0]
+        p[-1] = p[-1] + (p[-1] - p[-2]) * ext[1]
+        # resample along the stroke so tremor is smooth along arc length
+        step = size / (rng.uniform(12, 40) if irregular_sampling else 30.0)
+        dense = [p[0]]
+        for a, b in zip(p[:-1], p[1:]):
+            n = max(int(np.linalg.norm(b - a) / max(step, 0.5)), 1)
+            for t in range(1, n + 1):
+                dense.append(a + (b - a) * (t / n))
+        q = np.asarray(dense, dtype=np.float32)
+        noise = rng.normal(0, 0.012 * size * strength, size=q.shape).astype(np.float32)
+        if len(noise) >= 5:
+            kernel = np.ones(5, dtype=np.float32) / 5.0
+            for ax in range(2):
+                noise[:, ax] = np.convolve(noise[:, ax], kernel, mode="same")
+        q = q + noise
+        q = (q - center) @ A.T + center
+        q = q + warp(q)
+        out.append([tuple(map(float, xy)) for xy in q])
+    return out
+
+
+def generate_stroke_sample(label: int, rng: np.random.Generator | None = None,
+                           strength: float = 1.0) -> np.ndarray:
+    """One training image produced by the SAME renderer the game uses."""
+    from .sketch import render_strokes
+
+    rng = rng or np.random.default_rng()
+    strokes = augment_strokes(generate_strokes(label), rng, strength)
+    img = render_strokes(
+        strokes,
+        fill=float(rng.uniform(0.72, 0.88)),
+        thickness=float(rng.uniform(1.8, 3.4)),
+        min_extent=10.0,
+    )
+    img += rng.normal(0, 0.02, img.shape).astype(np.float32)
+    return np.clip(img, 0.0, 1.0)
+
+
+def generate_stroke_dataset(n_per_class: int = 200, seed: int | None = None,
+                            strength: float = 1.0) -> tuple[np.ndarray, np.ndarray]:
+    """Stroke-rendered dataset. Same layout as generate_dataset()."""
+    rng = np.random.default_rng(seed)
+    if seed is not None:
+        random.seed(seed)
+    images, labels = [], []
+    for label in range(NUM_SYMBOLS):
+        for _ in range(n_per_class):
+            images.append(generate_stroke_sample(label, rng, strength))
+            labels.append(label)
+    return np.array(images), np.array(labels)

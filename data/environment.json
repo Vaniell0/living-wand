@@ -1,0 +1,25 @@
+{
+  "_doc": "World context → channel multipliers. The same rune behaves differently depending on where and when it is cast: rain smothers fire, night feeds darkness, a ley line amplifies everything but makes it twitchy. compile_program(context={...}) picks one entry per axis.",
+  "weather": {
+    "clear": {},
+    "rain":  {"fire": 0.6, "water": 1.35, "air": 1.1, "light": 0.85},
+    "storm": {"air": 1.5, "water": 1.2, "fire": 0.7, "_stability": 0.85},
+    "snow":  {"fire": 0.75, "water": 1.2, "earth": 1.1, "time": 1.1},
+    "heat":  {"fire": 1.35, "water": 0.8, "life": 0.9}
+  },
+  "time": {
+    "day":   {"light": 1.2, "dark": 0.8},
+    "dusk":  {"light": 1.0, "dark": 1.0, "mind": 1.15},
+    "night": {"light": 0.75, "dark": 1.4, "mind": 1.1}
+  },
+  "place": {
+    "open":        {},
+    "water":       {"water": 1.4, "fire": 0.6, "life": 1.1},
+    "forest":      {"life": 1.35, "earth": 1.1, "fire": 1.15, "_stability": 0.95},
+    "stone":       {"earth": 1.35, "matter": 1.2, "life": 0.8},
+    "ruins":       {"time": 1.4, "mind": 1.2, "_stability": 0.9},
+    "ley_line":    {"_all": 1.25, "_stability": 0.8},
+    "sacred":      {"light": 1.35, "life": 1.2, "dark": 0.6},
+    "graveyard":   {"dark": 1.35, "life": 0.7, "time": 1.15}
+  }
+}

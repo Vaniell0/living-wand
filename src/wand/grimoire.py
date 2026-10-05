@@ -43,7 +43,9 @@ class Grimoire:
     def __init__(self, db_path: str = "data/grimoire.db"):
         self.db_path = db_path
         os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
-        self.conn = sqlite3.connect(db_path)
+        # check_same_thread=False: the engine API serves from worker threads
+        # (access is serialised by the caller)
+        self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self._init_tables()
 

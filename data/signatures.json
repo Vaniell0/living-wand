@@ -1,0 +1,24 @@
+{
+  "_doc": "Wand signatures: what experience in a pole visibly does to spells. Unlocked by AffinityHexagon level (log2 of pole XP; XP comes from engine outcomes). Each rule: 'when' filters ops/program, then multipliers / added params / added ops apply. Legible on purpose — the player can read why their fire behaves differently from someone else's.",
+  "signatures": [
+    {"id": "fervor",     "pole": "ELEMENT",   "level": 3, "name": "Пыл",               "desc": "урон стихий +15%",
+     "when": {"verb": "damage"}, "amount_mul": 1.15},
+    {"id": "blast",      "pole": "ELEMENT",   "level": 5, "name": "Разрыв",            "desc": "снаряды взрываются при попадании",
+     "when": {"delivery": "projectile"}, "radius_mul": 1.3,
+     "add_op": {"verb": "push", "channel": "arcane", "amount_frac": 0.3, "trigger": "on_hit"}},
+    {"id": "artisan",    "pole": "TRANSFORM", "level": 3, "name": "Рука мастера",      "desc": "трансформация +20%, заклинание дешевле на 10%",
+     "when": {"verb": "transform"}, "amount_mul": 1.2, "cost_mul": 0.9},
+    {"id": "cauterize",  "pole": "BIOLOGY",   "level": 3, "name": "Прижигание",        "desc": "урон возвращает 20% как лечение заклинателю",
+     "when": {"verb": "damage"}, "add_params": {"lifesteal": 0.2}},
+    {"id": "purity",     "pole": "BIOLOGY",   "level": 5, "name": "Чистое исцеление",  "desc": "лечение снимает яды и горение",
+     "when": {"verb": "heal"}, "amount_mul": 1.1, "add_params": {"cleanse": ["poisoned", "burning"]}},
+    {"id": "clear_mind", "pole": "MENTAL",    "level": 3, "name": "Ясный ум",          "desc": "стабильность +0.05, статусы дольше на 30%",
+     "stability_add": 0.05, "when": {"verb": "status"}, "duration_mul": 1.3},
+    {"id": "reach",      "pole": "SPACE",     "level": 3, "name": "Дальнобой",         "desc": "дальность +50%",
+     "range_mul": 1.5},
+    {"id": "swift",      "pole": "SPACE",     "level": 5, "name": "Стремительность",   "desc": "снаряды быстрее на 50%",
+     "when": {"delivery": "projectile"}, "speed_mul": 1.5},
+    {"id": "patience",   "pole": "TIME",      "level": 3, "name": "Терпение",          "desc": "длительные эффекты дольше на 30%, заряд дольше на 20%",
+     "duration_mul": 1.3, "cast_time_mul": 1.2}
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "_doc": "Physics layer of SpellProgram: what each channel does to the world's properties per unit of channel power. Engines with a material/simulation system should consume `fields` and let materials decide consequences (wood ignites when heat exceeds its threshold, ice melts, a golem cracks when solidity drops). The `ops` verbs are the convenience layer derived from the same spell.",
+  "properties": {
+    "heat":      "temperature; ignition, melting, freezing",
+    "moisture":  "wetness, water amount; extinguishes, conducts, grows",
+    "motion":    "kinetic push/pressure along the delivery direction",
+    "solidity":  "structure, hardness, mass; walls, armour, cracking",
+    "light":     "illumination and visibility; negative = darkness",
+    "vitality":  "life force of living things; positive heals, negative harms",
+    "will":      "mental state: focus, calm, fear, perception",
+    "position":  "spatial displacement / distortion",
+    "timeflow":  "local rate of time; <0 slows, >0 hastens"
+  },
+  "channels": {
+    "fire":   {"heat": 1.0, "light": 0.3, "moisture": -0.3},
+    "water":  {"moisture": 1.0, "heat": -0.3, "motion": 0.3},
+    "air":    {"motion": 1.0, "heat": -0.1},
+    "earth":  {"solidity": 1.0, "motion": -0.3},
+    "light":  {"light": 1.0, "heat": 0.2, "will": 0.2},
+    "dark":   {"light": -1.0, "vitality": -0.3, "will": -0.2},
+    "body":   {"vitality": 0.6, "solidity": 0.2},
+    "life":   {"vitality": 1.0, "moisture": 0.1},
+    "mind":   {"will": 1.0},
+    "matter": {"solidity": 0.6},
+    "space":  {"position": 1.0},
+    "time":   {"timeflow": -0.6}
+  }
+}
